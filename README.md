@@ -14,6 +14,17 @@ stack adds on top of them.
 
 - [0.1.0](spec/0.1.0.md) — draft, current
 
+## Companion documents
+
+These are non-normative:
+
+- [RATIONALE.md](RATIONALE.md) — why the specification makes the
+  choices it does
+- [FUTURE_CONSIDERATIONS.md](FUTURE_CONSIDERATIONS.md) — what is not
+  decided yet
+- [UPSTREAM_PROPOSALS.md](UPSTREAM_PROPOSALS.md) — changes proposed to
+  the composed specifications
+
 ## Licensing
 
 See [LICENSE.md](LICENSE.md).
