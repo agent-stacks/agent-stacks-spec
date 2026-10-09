@@ -316,6 +316,10 @@ plugin from the store, on macOS (aarch64) and Ubuntu 26.04 (aarch64,
 kernel 7.0), 8 October 2026. Every check below was run on both, in a
 script, headless and in an interactive terminal session.
 
+The environment, configurations, test scripts, and recorded output
+are in [jbayer/agent-stacks-sandbox-lab](https://github.com/jbayer/agent-stacks-sandbox-lab),
+whose README says how to run them again.
+
 ### A.1 Platform
 
 | | nono, macOS | srt, macOS | nono, Linux | srt, Linux |
