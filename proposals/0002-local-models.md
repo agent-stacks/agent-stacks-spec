@@ -342,10 +342,10 @@ serves models SHOULD have the following properties:
    each one at launch.
 5. **Each server should use a dynamically-assigned port.** To avoid
    port conflicts, servers should not use fixed ports.
-6. **Server state is part of the stack.** Some servers default to
-   writing models, cache, and configuration to a user's home directory;
-   this data SHOULD instead be written to the stack's state directory.
-   This state SHOULD NOT persist between launches.
+6. **Server state is per-stack.** Some servers default to writing
+   models, cache, and configuration to a user's home directory; this
+   data SHOULD instead be written to a per-stack state directory. This
+   state SHOULD NOT persist between launches.
 
 When a stack has a model, the following launch process should be
 followed (this alters the process defined in §7, between the steps of
