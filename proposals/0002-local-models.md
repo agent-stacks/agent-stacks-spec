@@ -240,7 +240,7 @@ in the following format:
 
 ```json
 {
-  "url": "https://models.example.com",
+  "url": "https://models.example.com/v1",
   "model": "qwen3-coder-30b-a3b",
   "protocols": ["anthropic-messages", "openai-chat-completions"]
 }
@@ -427,8 +427,9 @@ publish the endpoints its stacks use.
 
 This appendix is non-normative, and grows with each agent client and
 server tested. These protocol names are used by `serve --protocol`,
-`check --protocol`, and the `protocols` field of `endpoint.json`. The
-protocol's path is appended to an endpoint's URL.
+`check --protocol`, and the `protocols` field of `endpoint.json`. An
+endpoint's URL includes the version prefix (e.g. `/v1`), and the rest
+of the protocol's path is appended to it.
 
 | Name | API |
 |---|---|
