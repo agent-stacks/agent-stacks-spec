@@ -94,7 +94,7 @@ machine:
 An agent stack should be able to work with these externally-hosted
 models too. These models are represented in the stack as an
 `endpoint.json` file saying where the model is hosted. See
-[Deployment patterns](#5-deployment-patterns) for more.
+[Deployment patterns](#4-deployment-patterns) for more.
 
 ### Self-hosted models
 
@@ -282,7 +282,7 @@ model on oMLX or mlx-lm.
 
 If a serving parameter changes, the stack must be built again.
 
-### 4. Declaration
+### 3. Declaration
 
 §6.1 gains two optional fields:
 
@@ -307,13 +307,13 @@ model is self-hosted or externally-hosted:
   externally-hosted model is declared by `url`, `model`, and
   `protocols`, which the builder writes to `endpoint.json`.
 
-### 5. Deployment patterns
+### 4. Deployment patterns
 
 A model can be served in one of the following ways:
 
 | Where the model is served | Managed by | Type |
 |---|---|---|
-| Local host | Agent stack ([Launch](#6-launch)) | Self-hosted |
+| Local host | Agent stack ([Launch](#5-launch)) | Self-hosted |
 | On another machine | Agent stack | Self-hosted |
 | On the host | You | Externally-hosted, with a loopback `url` |
 | On another machine | Someone else | Externally-hosted |
@@ -323,7 +323,7 @@ One stack can contain multiple models with different deployment
 patterns. For example, a stack can contain a self-hosted model and
 reference an externally-hosted model from a team server.
 
-### 6. Launch
+### 5. Launch
 
 The stack owns the lifecycle of every server it starts. A launcher that
 serves models SHOULD have the following properties:
@@ -373,7 +373,7 @@ resolving the agent and executing it):
    <serve wrapper> -- [<sandbox> [options] --] <agent client> [args]
    ```
 
-### 8. Bindings
+### 6. Bindings
 
 As a Nix function argument:
 
