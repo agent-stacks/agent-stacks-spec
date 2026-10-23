@@ -29,8 +29,8 @@ Defining a model in a stack has four unique considerations:
    a plugin's runtimes. The build SHOULD fail if either of these steps
    fails.
 3. **Declaration.** The vocabulary in §6.1 defines `models`, either
-   self-hosted or externally-hosted per §6.2, and `defaultModel`, the
-   model used by the agent client.
+   self-hosted (carried, per §6.2) or externally-hosted (borrowed), and
+   `defaultModel`, the model used by the agent client.
 4. **Launch.** The stack owns the lifecycle of every inference server
    it starts. When you launch a stack, each inference server starts on
    a loopback port, which gives the agent client access to the models.
