@@ -183,8 +183,8 @@ on-disk representation defines precisely how the model will be served.
 `serve`:
 
 - serves the model at that address with the specified protocol. It
-  answers foreground requests that name `<model-name>`, until it
-  receives `SIGTERM`.
+  stays in the foreground, answering requests that name
+  `<model-name>`, until it receives `SIGTERM`.
 - writes exactly one line to standard output: `ready` once the model
   is loaded and accepting requests, or `error <code> <message>` if it
   cannot serve the model, after which it exits non-zero.
