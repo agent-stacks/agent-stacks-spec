@@ -428,7 +428,7 @@ publish the endpoints its stacks use.
 This appendix is non-normative, and grows with each agent client and
 server tested. These protocol names are used by `serve --protocol`,
 `check --protocol`, and the `protocols` field of `endpoint.json`. The
-protocol is appended to an endpoint's URL.
+protocol's path is appended to an endpoint's URL.
 
 | Name | API |
 |---|---|
