@@ -20,7 +20,7 @@ Defining a model in a stack has four unique considerations:
 
 1. **Layout.** A stack MAY define models under
    `<stack root>/share/agent-models/`, one directory per model. A model
-   hosted by the stack has its weights stored in that directory. A
+   hosted by the stack has its weights in that directory. A
    model hosted elsewhere is represented as an `endpoint.json` file
    saying where the model is hosted.
 2. **Build.** For models hosted by the stack, the model file is fetched
@@ -121,8 +121,8 @@ limit what machines it can run on.
   stack does not otherwise manage those models or their inference
   servers.
 - **Model distribution.** The only requirement is that self-hosted
-  models have pinnable weights that are stored in the model directory.
-  Model registries and download processes are out of scope.
+  models have pinnable weights. Model registries and download processes
+  are out of scope.
 - **Context management.** Local models usually have much smaller
   context windows than the foundation models do. As a result, good
   context window management is critical, but how this is done is out
