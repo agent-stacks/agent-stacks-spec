@@ -315,7 +315,6 @@ A model can be served in one of the following ways:
 | Where the model is served | Managed by | Type |
 |---|---|---|
 | Local host | Agent stack ([Launch](#5-launch)) | Self-hosted |
-| On another machine | Agent stack | Self-hosted |
 | On the host | You | Externally-hosted, with a loopback `url` |
 | On another machine | Someone else | Externally-hosted |
 | On a third-party platform | Vendor | Externally-hosted |
