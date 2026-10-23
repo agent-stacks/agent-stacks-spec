@@ -358,8 +358,8 @@ resolving the agent and executing it):
    stack is already running via another launcher, join the servers
    that are already running. For each externally-hosted model, confirm
    that the endpoint is accepting requests and uses a compatible
-   protocol. If `check` or `serve` fails with an error, the stack
-   SHOULD refuse to launch and show the error to the user.
+   protocol. If any of these steps fails, the stack SHOULD refuse to
+   launch and show the error to the user.
 2. **Give the models to the agent client**, using the agent client's
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
