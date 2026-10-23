@@ -412,9 +412,9 @@ publish the endpoints its stacks use.
    consider only starting a server when an agent client makes a
    request to it?
 3. **Interaction with sandboxes.** Some sandboxes may prevent a model
-   from getting the hardware access it needs to run. And in the case of
-   externally-hosted models, a sandbox may prevent an agent client from
-   making requests to the model at all. How should we handle this?
+   from getting the hardware access it needs to run. And a sandbox may
+   prevent an agent client from making requests to the model at all.
+   How should we handle this?
 4. **Secrets.** In the current proposal, `endpoint.json` doesn't
    include secrets, so if the endpoint for an externally-hosted model
    requires secrets, we have no way of letting the agent client
