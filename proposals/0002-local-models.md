@@ -164,9 +164,9 @@ caveman-stack/
             └── endpoint.json
 ```
 
-The `agent-models/` directory shows you every model that an agent
-client can use. If a stack does not have an `agent-models/` directory,
-it runs exactly the same as it does today.
+The `agent-models/` directory shows you every model in the stack. If a
+stack does not have an `agent-models/` directory, it runs exactly the
+same as it does today.
 
 #### `serve`
 
