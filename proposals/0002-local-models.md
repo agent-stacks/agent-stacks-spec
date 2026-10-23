@@ -62,16 +62,11 @@ They will accept a less capable model. They will not accept one that is
 sometimes hosted, because what they chose was the guarantee, not the
 model.
 
-**Compliance where the data lives.** An organization under a
-data-protection regime, such as health records under HIPAA or student
-records under FERPA, wants an agent on the machines where that data
-already is: a clinician's laptop, a server on site, a workstation with
-no network at all. Sending the data to a hosted model makes the
-model's operator part of the compliance boundary, with the contracts
-and audits that brings. Running the model on hardware already inside
-the boundary does not. The organization needs to install the whole
-thing offline, and to show someone else, before it runs, what it is
-and where it can send data.
+**Compliance where the data lives.** An organization holds data under
+rules that restrict where it may be processed, and wants an agent on
+hardware already inside those rules, possibly with no network at all.
+It needs to install the whole thing offline, and to show someone else,
+before it runs, what it is and where it can send data.
 
 ### What they need
 
@@ -366,8 +361,8 @@ for everyday use usually does differently:
   on first run.
 
 A prompt cache written to disk holds what the agent client was given,
-in derived form. For the compliance use case, that is a copy of the
-data in a place nobody audited. A launcher SHOULD NOT keep one past
+in derived form, and outlives the session that produced it unless
+something removes it. A launcher SHOULD NOT keep one past
 the server's lifetime unless the consumer asks, and SHOULD keep any it
 does keep in the stack's state, where it can be found and wiped.
 
@@ -463,10 +458,9 @@ the agent client is the thing whose reach the consumer wants to bound.
 A stack that carries a model and a sandbox, and whose plugins name no
 remote hosts, therefore runs with one allowed destination: its model.
 
-That is the form the compliance use case wants, and the reason the two
-proposals are written to compose rather than overlap. This one decides
-where inference goes. The sandbox decides that nothing else goes
-anywhere.
+That is the form need 5 asks for, and the reason the two proposals are
+written to compose rather than overlap. This one decides where
+inference goes. The sandbox decides that nothing else goes anywhere.
 
 ### 7. Bindings
 
@@ -514,9 +508,9 @@ anything. The third borrows a model the consumer already serves.
 
 **Borrowed endpoints only.** The quickest to build: the stack names a
 URL and the consumer runs the server. Kept, as the borrowed form. On
-its own it fails the second use case: the model is not pinned, not
-part of the unit, not installed offline with the rest, and nothing a
-consumer can inspect says what will answer.
+its own it meets neither need 3 nor need 4: the model is not pinned,
+not part of the unit, not installed offline with the rest, and nothing
+a consumer can inspect says what will answer.
 
 **Naming the server every time.** A declaration could be required to
 name the server as well as the weights. Rejected for the reason §6.3
@@ -602,8 +596,8 @@ Each step is usable on its own, and each tells the next what to keep.
 3. **Local-only stacks.** Should a stack be able to say that nothing
    it runs may leave the host, so that a builder refuses a plugin that
    names a remote MCP server and a launcher refuses to run without a
-   sandbox? It is the strongest form of the second use case, and more
-   policy than this specification has held so far.
+   sandbox? It is the strongest form of need 5, and more policy than
+   this specification has held so far.
 4. **One loopback port.** Can both sandboxes in Proposal 0001 allow
    one loopback port and deny the rest of loopback? If not, "nowhere
    else" in the Summary holds for remote hosts only.
