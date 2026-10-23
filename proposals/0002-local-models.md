@@ -2,9 +2,7 @@
 
 - Status: Draft
 - Targets: [spec 0.1.0](../spec/0.1.0.md) §11.3 and related sections
-  (§5.1, §6.1, §7, §8, §9, §10). Contains references to
-  [Proposal 0001](0001-host-sandbox.md)
-  ([#4](https://github.com/agent-stacks/agent-stacks-spec/pull/4)).
+  (§5.1, §6.1, §7, §8, §9, §10).
 - Scope: A stack can have any number of models. Some models are hosted
   by the stack itself and others are hosted elsewhere and referenced by
   the stack.
@@ -79,9 +77,9 @@ network access at all (e.g. in air-gapped environments).
 4. **Models are not responsible for enforcing the behavior of the agent
    client.** If a stack declares a local model, and the agent client
    uses a cloud model instead, the only way to prevent this behavior is
-   by defining a properly-configured sandbox as part of the stack.
-   Notably, the use of a sandbox is the only way to guarantee that data
-   is not being leaked to a third party.
+   by restricting the agent client's network access. Notably, this is
+   the only way to guarantee that data is not being leaked to a third
+   party.
 
 ### Externally-hosted models
 
@@ -115,8 +113,7 @@ that limit what machines it can run on.
   However, a stack only ever defines a single default; automatically
   routing a request to the best model is not supported.
 - **Egress enforcement.** This proposal does nothing to limit an agent
-  client's network access. To enforce a particular egress policy, you
-  must use a sandbox (Proposal 0001).
+  client's network access.
 - **Management of externally-hosted models.** Externally-hosted models
   may be accessed by the agent client in an agent stack, but an agent
   stack does not otherwise manage those models or their inference
@@ -251,7 +248,7 @@ in the following format:
 - `protocols` — the protocols the endpoint supports (see Appendix A).
 
 `endpoint.json` SHOULD NOT hold a credential. Secrets are not yet part
-of the spec; this remains an open question (4).
+of the spec; this remains an open question (3).
 
 ### 2. Build
 
@@ -366,12 +363,14 @@ resolving the agent and executing it):
    multiple models in a stack, `defaultModel` is the one to start with.
 3. **Manage server lifetimes** as defined above, even if the agent
    client crashes. This requires a wrapper or service manager, which
-   amends §7. For example, this is how it might look with a sandbox
-   wrapper too:
+   amends §7. For example:
 
    ```sh
-   <serve wrapper> -- [<sandbox> [options] --] <agent client> [args]
+   <serve wrapper> -- <agent client> [args]
    ```
+
+   The wrapper starts or joins the servers, runs the agent client, and
+   stops the servers once the last launch exits.
 
 ### 6. Bindings
 
@@ -411,16 +410,12 @@ publish the endpoints its stacks use.
 2. **Lazy loading.** To make it faster to launch a stack, should we
    consider only starting a server when an agent client makes a
    request to it?
-3. **Interaction with sandboxes.** Some sandboxes may prevent a model
-   from getting the hardware access it needs to run. And a sandbox may
-   prevent an agent client from making requests to the model at all.
-   How should we handle this?
-4. **Secrets.** In the current proposal, `endpoint.json` doesn't
+3. **Secrets.** In the current proposal, `endpoint.json` doesn't
    include secrets, so if the endpoint for an externally-hosted model
    requires secrets, we have no way of letting the agent client
    authenticate. How do we let agent clients authenticate without
    leaking secrets?
-5. **Single base URL.** Some agent clients, such as Claude Code, take a
+4. **Single base URL.** Some agent clients, such as Claude Code, take a
    single base URL. How do they reach models at different URLs?
 
 ## Appendix A: Protocol names
