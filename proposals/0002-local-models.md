@@ -331,8 +331,8 @@ serves models SHOULD have the following properties:
 1. **No manual setup.** Externally-hosted models require an existing
    inference server, but otherwise there should be no dependencies on
    the underlying host system beyond hardware and drivers.
-2. **No manual cleanup.** When a stack is torn down, all of its
-   processes (including inference servers) are torn down too.
+2. **No manual cleanup.** When a stack is torn down or killed, all of
+   its processes (including inference servers) are torn down too.
 3. **Multiple launches of a stack can share servers.** The first launch
    starts the servers, and concurrent launches of the same stack share
    those servers. Sharing saves memory and keeps caches warm. Once all
@@ -365,8 +365,9 @@ resolving the agent and executing it):
    per-launch staging directory) to set the model. When there are
    multiple models in a stack, `defaultModel` is the one to start with.
 3. **Manage server lifetimes** as defined above, even if the agent
-   client crashes. It MAY use a wrapper to accomplish this. For
-   example, this is how it might look with a sandbox wrapper too:
+   client crashes. This requires a wrapper or service manager, which
+   amends §7. For example, this is how it might look with a sandbox
+   wrapper too:
 
    ```sh
    <serve wrapper> -- [<sandbox> [options] --] <agent client> [args]
