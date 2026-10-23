@@ -29,8 +29,8 @@ Defining a model in a stack has four unique considerations:
    a plugin's runtimes. The build SHOULD fail if either of these steps
    fails.
 3. **Declaration.** The vocabulary in §6.1 defines `models`, either
-   self-hosted (carried, per §6.2) or externally-hosted (borrowed), and
-   `defaultModel`, the model used by the agent client.
+   self-contained or externally-hosted per §6.2, and `defaultModel`,
+   the model used by the agent client.
 4. **Launch.** The stack owns the lifecycle of every inference server
    it starts. When you launch a stack, each inference server starts on
    a loopback port, which gives the agent client access to the models.
@@ -74,7 +74,7 @@ network access at all (e.g. in air-gapped environments).
    and drivers. The inference servers are started by the stack, and
    stopped by the stack.
 3. **Declared models must be available.** If a model can't be served
-   (in the self-hosted case) or accessed (in the externally-hosted
+   (in the self-contained case) or accessed (in the externally-hosted
    case), the stack will fail to launch.
 4. **Models are not responsible for enforcing the behavior of the agent
    client.** If a stack declares a local model, and the agent client
@@ -97,17 +97,17 @@ models too. These models are represented in the stack as an
 `endpoint.json` file saying where the model is hosted. See
 [Deployment patterns](#4-deployment-patterns) for more.
 
-### Self-hosted models
+### Self-contained models
 
-A model self-hosted by a stack consists of:
+A self-contained model consists of:
 
 1. File(s) containing the model's weights (e.g. GGUF, MLX).
 2. The inference server (e.g. llama.cpp, Ollama, oMLX, vLLM) and its
    dependencies (e.g. CUDA).
 3. A `bin/serve` executable that starts the server.
 
-NOTE: A self-hosted model MAY have specific hardware requirements that
-limit what machines it can run on.
+NOTE: A self-contained model MAY have specific hardware requirements
+that limit what machines it can run on.
 
 ## Out of scope
 
@@ -121,7 +121,7 @@ limit what machines it can run on.
   may be accessed by the agent client in an agent stack, but an agent
   stack does not otherwise manage those models or their inference
   servers.
-- **Model distribution.** The only requirement is that self-hosted
+- **Model distribution.** The only requirement is that self-contained
   models have pinnable weights. Model registries and download processes
   are out of scope.
 - **Context management.** Local models usually run with much smaller
@@ -136,7 +136,7 @@ limit what machines it can run on.
 1. A stack MAY store models at
    `<stack root>/share/agent-models/<model-name>/`, one directory per
    model. Model names SHOULD be unique within a stack.
-2. A self-hosted model's directory SHOULD contain the model's weights
+2. A self-contained model's directory SHOULD contain the model's weights
    and a `bin/` folder containing an executable named `serve` and a
    link to the server it runs. The `bin/` folder MAY also contain an
    executable named `check`.
@@ -154,7 +154,7 @@ caveman-stack/
     ├── agent-plugins/
     │   └── caveman/...
     └── agent-models/
-        ├── qwen3-8b/                  self-hosted
+        ├── qwen3-8b/                  self-contained
         │   ├── bin/
         │   │   ├── serve              the serve contract
         │   │   ├── check              optional host check
@@ -170,7 +170,7 @@ same as it does today.
 
 #### `serve`
 
-`serve` is the interface between a launcher and a self-hosted model.
+`serve` is the interface between a launcher and a self-contained model.
 The launcher runs it as:
 
 ```sh
@@ -221,7 +221,7 @@ In addition, the script needs to:
 #### `check`
 
 Models can be large and take a long time to start. To save time in
-failure scenarios, a self-hosted model's directory MAY also contain a
+failure scenarios, a self-contained model's directory MAY also contain a
 `bin/check` executable, which can perform some fast checks to determine
 if the model's requirements are met. It takes a single argument
 (`--protocol <name>`) and writes one line to standard output:
@@ -255,13 +255,13 @@ of the spec; this remains an open question (4).
 
 ### 2. Build
 
-A self-hosted model's weights are a source (§10.1) that should be
+A self-contained model's weights are a source (§10.1) that should be
 pinned by digest when a stack is built. To minimize the cost of adding
-a large self-hosted model to a stack:
+a large self-contained model to a stack:
 
 - A stack SHOULD NOT download a model at runtime.
 - A builder SHOULD store weights once per digest, so that every stack
-  with the same self-hosted model links to the same file.
+  with the same self-contained model links to the same file.
 - A launcher SHOULD NOT copy weights at launch (e.g. from the
   dependency set into a cache).
 
@@ -295,11 +295,11 @@ If a serving parameter changes, the stack must be built again.
 
 Each model has a `name`, which is its directory under
 `share/agent-models/`. A declaration SHOULD be explicit about whether a
-model is self-hosted or externally-hosted:
+model is self-contained or externally-hosted:
 
-- **Self-hosted.** The model is part of the stack's dependency set, and
-  the stack serves the model on launch, with no network access
-  required. A self-hosted model is declared by:
+- **Self-contained.** The model is part of the stack's dependency set,
+  and the stack serves the model on launch, with no network access
+  required. A self-contained model is declared by:
   - `source` — where the weights come from, pinned by revision and
     content digest. Source does not have a defined schema.
   - `server` — the name of the package that serves the weights.
@@ -314,13 +314,13 @@ A model can be served in one of the following ways:
 
 | Where the model is served | Managed by | Type |
 |---|---|---|
-| Local host | Agent stack ([Launch](#5-launch)) | Self-hosted |
+| Local host | Agent stack ([Launch](#5-launch)) | Self-contained |
 | On the host | You | Externally-hosted, with a loopback `url` |
 | On another machine | Someone else | Externally-hosted |
 | On a third-party platform | Vendor | Externally-hosted |
 
 One stack can contain multiple models with different deployment
-patterns. For example, a stack can contain a self-hosted model and
+patterns. For example, a stack can contain a self-contained model and
 reference an externally-hosted model from a team server.
 
 ### 5. Launch
@@ -338,7 +338,7 @@ serves models SHOULD have the following properties:
    those servers. Sharing saves memory and keeps caches warm. Once all
    launches of a stack exit, the servers are torn down.
 4. **Each model has its own server.** If a stack has multiple
-   self-hosted models, the stack SHOULD start a separate server for
+   self-contained models, the stack SHOULD start a separate server for
    each one at launch.
 5. **Each server should use a dynamically-assigned port.** To avoid
    port conflicts, servers should not use fixed ports.
@@ -351,7 +351,7 @@ When a stack has a model, the following launch process should be
 followed (this alters the process defined in §7, between the steps of
 resolving the agent and executing it):
 
-1. **Start or join the servers.** For each self-hosted model with no
+1. **Start or join the servers.** For each self-contained model with no
    server running for this stack, run `check` if it exists, choose a
    loopback address and a free port, run `serve` with those arguments
    and a protocol the agent client speaks, and wait for the server to
