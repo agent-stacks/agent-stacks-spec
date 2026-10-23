@@ -354,12 +354,12 @@ resolving the agent and executing it):
 1. **Start or join the servers.** For each self-hosted model with no
    server running for this stack, run `check` if it exists, choose a
    loopback address and a free port, run `serve` with those arguments
-   and a valid protocol, and wait for the server to be ready. If the
-   stack is already running via another launcher, join the servers
-   that are already running. For each externally-hosted model, confirm
-   that the endpoint is accepting requests and uses a compatible
-   protocol. If any of these steps fails, the stack SHOULD refuse to
-   launch and show the error to the user.
+   and a protocol the agent client speaks, and wait for the server to
+   be ready. If the stack is already running via another launch, join
+   the servers that are already running. For each externally-hosted
+   model, confirm that the endpoint is accepting requests and uses a
+   compatible protocol. If any of these steps fails, the stack SHOULD
+   refuse to launch and show the error to the user.
 2. **Give the models to the agent client**, using the agent client's
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
