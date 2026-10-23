@@ -420,6 +420,8 @@ publish the endpoints its stacks use.
    requires secrets, we have no way of letting the agent client
    authenticate. How do we let agent clients authenticate without
    leaking secrets?
+5. **Single base URL.** Some agent clients, such as Claude Code, take a
+   single base URL. How do they reach models at different URLs?
 
 ## Appendix A: Protocol names
 
