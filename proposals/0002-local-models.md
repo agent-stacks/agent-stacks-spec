@@ -419,7 +419,7 @@ publish the endpoints its stacks use.
    include secrets, so if the endpoint for an externally-hosted model
    requires secrets, we have no way of letting the agent client
    authenticate. How do we let agent clients authenticate without
-   leaking secrets to them?
+   leaking secrets?
 
 ## Appendix A: Protocol names
 
