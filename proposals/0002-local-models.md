@@ -47,9 +47,7 @@ This proposal is informed by two real-world use cases:
 
 **Data privacy.** A person or a team wants an agent to have access to
 data without sending it to a third party. This could be medical or
-financial records, a private codebase, or company IP. These users will
-accept a less capable model in exchange for keeping data on their own
-machines.
+financial records, a private codebase, or company IP.
 
 **Compliance.** An organization may be required to comply with
 regulations that restrict where data may be processed. If so, it may
@@ -121,10 +119,8 @@ that limit what machines it can run on.
 - **Model distribution.** The only requirement is that self-contained
   models have pinnable weights. Model registries and download processes
   are out of scope.
-- **Context management.** Local models usually run with much smaller
-  context windows than hosted models do. As a result, good
-  context window management is critical, but how this is done is out
-  of scope for this proposal.
+- **Context management.** How an agent client manages its context is
+  out of scope for this proposal.
 
 ## Proposal
 
