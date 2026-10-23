@@ -364,9 +364,8 @@ resolving the agent and executing it):
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
    multiple models in a stack, `defaultModel` is the one to start with.
-3. **Manage server lifetimes**, per launch or per stack, as defined
-   above. If the agent client crashes, the stack SHOULD also stop the
-   server and the stack. It MAY use a wrapper to accomplish this. For
+3. **Manage server lifetimes** as defined above, even if the agent
+   client crashes. It MAY use a wrapper to accomplish this. For
    example, this is how it might look with a sandbox wrapper too:
 
    ```sh
