@@ -2,7 +2,7 @@
 
 - Status: Draft
 - Targets: [spec 0.1.0](../spec/0.1.0.md) §11.3 and related sections
-  (§5.1, §6.1, §6.4, §7, §8, §9, §10). Contains references to
+  (§5.1, §6.1, §7, §8, §9, §10). Contains references to
   [Proposal 0001](0001-host-sandbox.md)
   ([#4](https://github.com/agent-stacks/agent-stacks-spec/pull/4)).
 - Scope: A stack can have any number of models. Some models are hosted
