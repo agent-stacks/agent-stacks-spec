@@ -34,8 +34,8 @@ Defining a model in a stack has four unique considerations:
 4. **Launch.** The stack owns the lifecycle of every inference server
    it starts. When you launch a stack, each inference server starts on
    a loopback port, which gives the agent client access to the models.
-   All inference servers will stop after the last agent client has
-   exited. The launch will fail if a declared model can't be served.
+   These servers stop after the last agent client has exited. The
+   launch will fail if a declared model can't be served.
 
 ## Motivation
 
