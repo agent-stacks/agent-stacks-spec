@@ -70,8 +70,9 @@ network access at all (e.g. in air-gapped environments).
    launching the stack.
 2. **The stack manages the lifecycle of inference servers.** If a model
    is hosted by the stack itself, there should be no external
-   dependencies outside of the stack at runtime. The inference servers
-   are started by the stack, and stopped by the stack.
+   dependencies outside of the stack at runtime, other than hardware
+   and drivers. The inference servers are started by the stack, and
+   stopped by the stack.
 3. **The agent client must not access other models.** If a model can't
    be served (in the self-hosted case) or accessed (in the
    externally-hosted case), the stack will fail to launch.
@@ -330,7 +331,7 @@ serves models SHOULD have the following properties:
 
 1. **No manual setup.** Externally-hosted models require an existing
    inference server, but otherwise there should be no dependencies on
-   the underlying host system.
+   the underlying host system beyond hardware and drivers.
 2. **No manual cleanup.** When a stack is torn down, all of its
    processes (including inference servers) are torn down too.
 3. **Multiple launches of a stack can share servers.** The first launch
