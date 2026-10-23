@@ -124,8 +124,8 @@ limit what machines it can run on.
 - **Model distribution.** The only requirement is that self-hosted
   models have pinnable weights. Model registries and download processes
   are out of scope.
-- **Context management.** Local models usually have much smaller
-  context windows than the foundation models do. As a result, good
+- **Context management.** Local models usually run with much smaller
+  context windows than hosted models do. As a result, good
   context window management is critical, but how this is done is out
   of scope for this proposal.
 
