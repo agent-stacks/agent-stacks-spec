@@ -26,8 +26,8 @@ Defining a model in a stack has four unique considerations:
 2. **Build.** For models hosted by the stack, the model file is fetched
    when the stack is built, and digest-pinned for reproducibility. The
    builder resolves the server, and links it similar to how §8 resolves
-   a plugin's runtimes. The stack SHOULD fail to build if either of
-   these steps fails.
+   a plugin's runtimes. The build SHOULD fail if either of these steps
+   fails.
 3. **Declaration.** The vocabulary in §6.1 defines `models`, either
    self-hosted or externally-hosted per §6.2, and `defaultModel`, the
    model used by the agent client.
