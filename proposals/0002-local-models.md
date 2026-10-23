@@ -73,9 +73,9 @@ network access at all (e.g. in air-gapped environments).
    dependencies outside of the stack at runtime, other than hardware
    and drivers. The inference servers are started by the stack, and
    stopped by the stack.
-3. **The agent client must not access other models.** If a model can't
-   be served (in the self-hosted case) or accessed (in the
-   externally-hosted case), the stack will fail to launch.
+3. **Declared models must be available.** If a model can't be served
+   (in the self-hosted case) or accessed (in the externally-hosted
+   case), the stack will fail to launch.
 4. **Models are not responsible for enforcing the behavior of the agent
    client.** If a stack declares a local model, and the agent client
    uses a cloud model instead, the only way to prevent this behavior is
