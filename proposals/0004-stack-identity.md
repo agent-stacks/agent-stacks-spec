@@ -1,43 +1,38 @@
 # Proposal 0004: Stack identity, discovery, and telemetry
 
 - Status: Draft
-- Targets: [spec 0.1.0](../spec/0.1.0.md) §11.1, and the sections it
-  would touch: §2, §5.1, §6, §7, §9, Appendix A
-- Scope: how a stack says what it is, on disk and while it runs, how a
-  tool finds the stacks on a machine, and how an operator requires
+- Targets: [spec 0.1.0](../spec/0.1.0.md) §11.1 and related sections: §2, §5.1, §6, §7, §9, Appendix A
+- Scope: This proposal describes how a stack identifies itself on disk and at runtime, how a
+  governance tool can find the stacks present on a machine, and how an operator can require
   telemetry from every stack on a machine.
 
 ## Summary
 
-A stack carries no record of what it is, nothing it runs says which
-stack it came from, and nothing tells a tool where to look for one.
-Tools that govern, secure, or observe agents have to guess. This
+In the current spec, a stack doesn't carry a record of what it contains, where it came from, and where to look for one.
+As a result, tools that govern, secure, or observe agents have to guess. This
 proposal adds four things:
 
 1. **Record.** A built stack MUST carry a record at
    `share/agent-stacks/<stack-name>.json`, written by the builder,
-   naming the specification version, the stack, its launcher, its
-   agent client, and its plugins.
-2. **Discovery.** A tool finds records under the `share/` directories
+   naming the specification version, the stack's name (and optionally its version), its launcher command, its
+   agent client (harness), and its plugins.
+2. **Discovery.** A tool SHOULD finds records under the `share/` directories
    that stacks are installed into, and the launcher registers each
-   launch in one directory per user, so that stacks with no fixed
-   location (a project's environment, a stack assembled for one launch)
-   can be found too. Everything a tool needs is read from files. It
+   launch in a known directory per user, so that stacks with no fixed
+   location (e.g. a project's environment, a stack assembled for one launch)
+   can be found too. Everything a tool needs to determine what's in a stack can be read from files. It
    never has to run anything in the stack.
 3. **Runtime identity.** Before it runs the agent client, the launcher
-   puts the stack's identity into the agent client's environment and
+   MUST puts the stack's identity into the agent client's environment and
    its OpenTelemetry resource attributes.
 4. **Telemetry policy.** An operator MAY require telemetry from every
    stack on a machine. The launcher translates that policy into each
    agent client's own settings, and refuses to launch an agent client
    it cannot configure.
 
-The record is the first requirement this specification defines of its
-own (§2). Everything else here is SHOULD or MAY.
-
 ## Motivation
 
-### Something now reads it
+### Governance tools provide a valid use case for adding a stack manifest
 
 §11.1 deferred a stack manifest until something would read it: "a
 format specified before it has a consumer is specified from
