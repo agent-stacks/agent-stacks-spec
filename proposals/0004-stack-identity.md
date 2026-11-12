@@ -1,29 +1,34 @@
 # Proposal 0004: Stack identity, discovery, and telemetry
 
 - Status: Draft
-- Targets: [spec 0.1.0](../spec/0.1.0.md) §11.1 and related sections: §2, §5.1, §6, §7, §9, Appendix A
-- Scope: This proposal describes how a stack identifies itself on disk and at runtime, how a
-  governance tool can find the stacks present on a machine, and how an operator can require
-  telemetry from every stack on a machine.
+- Targets: [spec 0.1.0](../spec/0.1.0.md) §11.1 and related sections:
+  §2, §5.1, §6, §7, §9, Appendix A
+- Scope: This proposal describes how a stack identifies itself on disk
+  and at runtime, how a governance tool can find the stacks present on
+  a machine, and how an operator can require telemetry from every stack
+  on a machine.
 
 ## Summary
 
-In the current spec, a stack doesn't carry a record of what it contains, where it came from, and where to look for one.
-As a result, tools that govern, secure, or observe agents have to guess. This
-proposal adds four things:
+In the current spec, a stack doesn't carry a record of what it contains
+or where it came from, and nothing tells a tool where to look for one.
+As a result, tools that govern, secure, or observe agents have to guess.
+This proposal adds four things:
 
 1. **Record.** A built stack MUST carry a record at
    `share/agent-stacks/<stack-name>.json`, written by the builder,
-   naming the specification version, the stack's name (and optionally its version), its launcher command, its
-   agent client (harness), and its plugins.
-2. **Discovery.** A tool SHOULD finds records under the `share/` directories
-   that stacks are installed into, and the launcher registers each
-   launch in a known directory per user, so that stacks with no fixed
-   location (e.g. a project's environment, a stack assembled for one launch)
-   can be found too. Everything a tool needs to determine what's in a stack can be read from files. It
-   never has to run anything in the stack.
+   naming the specification version, the stack's name (and optionally
+   its version), its launcher command, its agent client (harness), and
+   its plugins.
+2. **Discovery.** A tool SHOULD find records under the `share/`
+   directories that stacks are installed into, and the launcher
+   registers each launch in a known directory per user, so that stacks
+   with no fixed location (e.g. a project's environment, a stack
+   assembled for one launch) can be found too. Everything a tool needs
+   to determine what's in a stack can be read from files. It never has
+   to run anything in the stack.
 3. **Runtime identity.** Before it runs the agent client, the launcher
-   MUST puts the stack's identity into the agent client's environment and
+   MUST put the stack's identity into the agent client's environment and
    its OpenTelemetry resource attributes.
 4. **Telemetry policy.** An operator MAY require telemetry from every
    stack on a machine. The launcher translates that policy into each
