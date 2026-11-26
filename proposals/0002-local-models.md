@@ -27,8 +27,8 @@ Defining a model in a stack has four unique considerations:
    a plugin's runtimes. The build SHOULD fail if either of these steps
    fails.
 3. **Declaration.** The vocabulary in §6.1 defines `models`, either
-   self-contained or externally-hosted per §6.2, and `defaultModel`,
-   the model used by the agent client.
+   carried, borrowed, or externally-hosted, and `defaultModel`, the
+   model used by the agent client.
 4. **Launch.** The stack owns the lifecycle of every inference server
    it starts. When you launch a stack, each inference server starts on
    a loopback port, which gives the agent client access to the models.
@@ -363,7 +363,10 @@ A self-contained model's files are a source (§10.1) that should be
 pinned by digest when a stack is built. To minimize the cost of adding
 a large self-contained model to a stack:
 
-- A stack SHOULD NOT download a model at runtime.
+- A stack SHOULD NOT download a carried model at runtime. A borrowed
+  model ([§4](#4-declaration)) is the exception: the consumer downloads
+  it into their own cache, and a model gateway MAY fetch it there, so
+  launch announces it instead.
 - A builder SHOULD store each model file once per digest, so that
   every stack with the same self-contained model links to the same
   file.
@@ -412,6 +415,30 @@ model is self-contained or externally-hosted:
   dependency set; it is hosted at the defined endpoint. An
   externally-hosted model is declared by `url`, `model`, and
   `protocols`, which the builder writes to `endpoint.json`.
+
+#### A model is carried or it is borrowed
+
+A model that runs locally comes from somewhere, as the agent client
+does in §6.2, and a declaration SHOULD make that explicit:
+
+- **Carried.** The model files are part of the stack's dependency set.
+  A self-contained model is carried, and the stack runs the same model
+  on every machine it reaches.
+- **Borrowed.** The model files are resolved from the consumer's
+  Hugging Face cache (`HF_HUB_CACHE`, by default
+  `~/.cache/huggingface/hub`) when the stack runs: whatever has been
+  downloaded there, for example with `hf download`, at whatever
+  revision. A borrowed model has no directory under
+  `share/agent-models/`. The model gateway serves it from the cache,
+  and launch finds it by the ID the gateway lists. It is declared by
+  the repository it comes from, with no digest.
+
+Both are legitimate. Borrowing is how a consumer tries a model before
+anyone packages it. A launcher SHOULD announce every borrowed model it
+offers, on every launch, naming where it found it, as §9.3 asks for an
+agent client resolved from the consumer's environment. An
+externally-hosted model is neither carried nor borrowed: it has no
+model files.
 
 ### 5. Deployment patterns
 
@@ -580,6 +607,11 @@ publish the endpoints its stacks use.
    a model has either model files or an endpoint and never both. Does
    that fold work for externally-hosted models as written here, and
    what else does a remote model's `model.json` need to say?
+7. **Naming a borrowed model.** A borrowed model is declared by its
+   repository, but launch sees the ID its model gateway lists, and
+   gateways derive that ID differently. Is the repository enough for a
+   launcher to find the model and announce it, or does the declaration
+   also need the ID?
 
 ## Appendix A: Model gateways that meet §1
 
