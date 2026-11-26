@@ -18,7 +18,7 @@ Defining a model in a stack has four unique considerations:
 
 1. **Layout.** A stack MAY define models under
    `<stack root>/share/agent-models/`, one directory per model. A model
-   hosted by the stack has its weights in that directory. A
+   hosted by the stack has its model files in that directory. A
    model hosted elsewhere is represented as an `endpoint.json` file
    saying where the model is hosted.
 2. **Build.** For models hosted by the stack, the model file is fetched
@@ -34,6 +34,11 @@ Defining a model in a stack has four unique considerations:
    a loopback port, which gives the agent client access to the models.
    These servers stop after the last agent client has exited. The
    launch will fail if a declared model can't be served.
+
+Underneath all four, a model is reached through a model gateway that
+speaks one of a few named protocols.
+[§1](#1-model-gateways-and-protocols) names them and says what a
+gateway does for a launcher to use it.
 
 ## Motivation
 
@@ -91,13 +96,13 @@ machine:
 An agent stack should be able to work with these externally-hosted
 models too. These models are represented in the stack as an
 `endpoint.json` file saying where the model is hosted. See
-[Deployment patterns](#4-deployment-patterns) for more.
+[Deployment patterns](#5-deployment-patterns) for more.
 
 ### Self-contained models
 
 A self-contained model consists of:
 
-1. File(s) containing the model's weights (e.g. GGUF, MLX).
+1. The model files (e.g. GGUF, MLX).
 2. The inference server (e.g. llama.cpp, Ollama, oMLX, vLLM) and its
    dependencies (e.g. CUDA).
 3. A `bin/serve` executable that starts the server.
@@ -109,33 +114,133 @@ that limit what machines it can run on.
 
 - **Model routing.** A stack can give its agent client several models.
   However, a stack only ever defines a single default; automatically
-  routing a request to the best model is not supported.
+  routing a request to the best model is not supported. A router
+  that does so is a model gateway like any other (§1), and its rules
+  are its own configuration.
 - **Egress enforcement.** This proposal does nothing to limit an agent
   client's network access.
 - **Management of externally-hosted models.** Externally-hosted models
   may be accessed by the agent client in an agent stack, but an agent
-  stack does not otherwise manage those models or their inference
-  servers.
+  stack does not otherwise manage those models or the model gateways
+  that serve them.
 - **Model distribution.** The only requirement is that self-contained
-  models have pinnable weights. Model registries and download processes
-  are out of scope.
+  models have pinnable model files. Model registries and download
+  processes are out of scope.
 - **Context management.** How an agent client manages its context is
   out of scope for this proposal.
 
+## Terms
+
+This proposal uses the terms of §3, and these:
+
+- **Model** — what an agent client selects: an ID that a model gateway
+  lists, with a context window and the protocols it is reached by. An
+  ID MAY be an alias the gateway resolves to another model; a stack
+  and its launcher treat it as opaque.
+- **Model files** — what is on disk for a model that runs locally, in
+  a format such as GGUF or MLX. An externally-hosted model has no
+  model files.
+- **Weights** — the tensor files among a model's files. The word is
+  used only where their size, quantization, or digest matters.
+- **Model gateway** — whatever serves models at an endpoint. Launch
+  and the agent client only ever talk to a model gateway, and cannot
+  tell its two kinds apart:
+  - **Inference server** — a model gateway that runs models from model
+    files: llama.cpp's `llama-server`, oMLX, Ollama, vLLM.
+  - **Router** — a model gateway that forwards requests to other model
+    gateways, and may translate between protocols or choose a backend
+    per request. It runs no model itself: LiteLLM, claude-code-router.
+- **Endpoint** — the base URL a model gateway is reached at, and the
+  protocols it speaks there.
+- **Protocol** — the API an endpoint speaks, by one of the names in
+  [§1](#1-model-gateways-and-protocols).
+
+"LLM gateway" is avoided on purpose. In the industry it names a proxy
+in front of cloud providers that handles keys, budgets, and logging,
+which is a narrower thing than a model gateway.
+
 ## Proposal
 
-### 1. Layout
+### 1. Model gateways and protocols
+
+#### Protocol names
+
+A stack, an endpoint, and an agent client name protocols, never
+products. These are the names:
+
+| Name | API |
+| --- | --- |
+| `anthropic-messages` | Anthropic Messages API, `POST /v1/messages` |
+| `openai-chat-completions` | OpenAI Chat Completions API, `POST /v1/chat/completions` |
+| `open-responses` | [Open Responses](https://openresponses.org/), the open specification of OpenAI's Responses API, `POST /v1/responses` |
+
+An endpoint's URL includes the version prefix (e.g. `/v1`), and the
+rest of the protocol's path is appended to it. These names are used by
+`serve --protocol`, `check --protocol`, and the `protocols` field of
+`endpoint.json`. The list grows with each agent client and model
+gateway tested; a name that is not in it SHOULD NOT be used until it
+is added.
+
+No neutral standard covers all three. Model gateways copy vendor APIs,
+and "compatible" means "mostly": tool calls, streaming events, and
+reasoning output are where they drift. Only `open-responses` has an
+open specification with acceptance tests.
+
+#### What a model gateway does for launch
+
+For a launcher to use it, a model gateway SHOULD:
+
+1. **Serve every model at one endpoint.** One base URL for all the
+   models it offers, whichever protocol a request uses.
+2. **List every model at `GET /v1/models`**, in the OpenAI list shape
+   (`{"object": "list", "data": [{"id": …}, …]}`), including models it
+   has not loaded yet. An entry's `id` is the name a request uses.
+3. **Load a model when a request names it.** A request whose `model`
+   is a listed ID is served without a separate load call. The gateway
+   MAY unload other models to make room.
+4. **Speak at least one protocol** from the table above, at that
+   protocol's path under the endpoint.
+
+This is what lets one model gateway serve every model a stack has, and
+launch hand the agent client one URL. Nothing else is assumed. How a
+gateway reports a model's context window, its health, or what it has
+loaded differs between gateways and is not part of the contract (see
+[Open questions](#open-questions)). Appendix A records three inference
+servers that meet it.
+
+A router meets the contract the same way. Its routing rules are its
+own configuration, as an inference server's flags are its own.
+
+#### Matching protocols
+
+An endpoint speaks one or more protocols, and so does an agent client.
+Launch matches them; the agent client never works out the protocol
+itself.
+
+1. Launch SHOULD take the protocols both sides speak, and prefer the
+   agent client's native one.
+2. When there are none, launch SHOULD refuse to launch, naming the
+   agent client, the endpoint, and what each speaks. It MAY suggest a
+   router in front of the endpoint.
+3. Launch then configures the agent client in the agent client's own
+   terms (an environment variable, a flag, a staged file), which
+   already imply the protocol.
+
+What each agent client speaks is a fact about the agent client, and
+lives in the launcher beside the rest of its per-agent code.
+
+### 2. Layout
 
 1. A stack MAY store models at
    `<stack root>/share/agent-models/<model-name>/`, one directory per
    model. Model names SHOULD be unique within a stack.
-2. A self-contained model's directory SHOULD contain the model's weights
+2. A self-contained model's directory SHOULD contain the model files
    and a `bin/` folder containing an executable named `serve` and a
    link to the server it runs. The `bin/` folder MAY also contain an
    executable named `check`.
 3. An externally-hosted model's directory SHOULD contain one file,
    `endpoint.json`.
-4. The weights and the server SHOULD be links into the stack's
+4. The model files and the server SHOULD be links into the stack's
    dependency set, similar to how plugin runtimes work (§8.3).
 5. `<model-name>` is how the stack refers to the model.
 
@@ -152,7 +257,7 @@ caveman-stack/
         │   │   ├── serve              the serve contract
         │   │   ├── check              optional host check
         │   │   └── llama-server       link to the server it runs
-        │   └── qwen3-8b-q4_k_m.gguf   link to the weights
+        │   └── qwen3-8b-q4_k_m.gguf   link to the model file
         └── team-coder/                externally-hosted
             └── endpoint.json
 ```
@@ -190,7 +295,7 @@ The `<code>` is one of:
 |---|---|
 | `protocol` | the server does not speak the protocol |
 | `address` | the address cannot be listened on |
-| `weights` | the weights are missing or will not load |
+| `weights` | the model files are missing or will not load |
 | `memory` | the host does not have enough memory |
 | `host` | the host doesn't meet some other requirement: an accelerator, a driver, an operating system version |
 | `other` | catch-all for other errors |
@@ -241,21 +346,23 @@ in the following format:
 
 - `url` — the base URL the model is served at.
 - `model` — the name of the model to request.
-- `protocols` — the protocols the endpoint supports (see Appendix A).
+- `protocols` — the protocols the endpoint speaks (see
+  [§1](#1-model-gateways-and-protocols)).
 
 `endpoint.json` SHOULD NOT hold a credential. Secrets are not yet part
 of the spec; this remains an open question (3).
 
-### 2. Build
+### 3. Build
 
-A self-contained model's weights are a source (§10.1) that should be
+A self-contained model's files are a source (§10.1) that should be
 pinned by digest when a stack is built. To minimize the cost of adding
 a large self-contained model to a stack:
 
 - A stack SHOULD NOT download a model at runtime.
-- A builder SHOULD store weights once per digest, so that every stack
-  with the same self-contained model links to the same file.
-- A launcher SHOULD NOT copy weights at launch (e.g. from the
+- A builder SHOULD store each model file once per digest, so that
+  every stack with the same self-contained model links to the same
+  file.
+- A launcher SHOULD NOT copy model files at launch (e.g. from the
   dependency set into a cache).
 
 A model's declaration specifies the inference server that should be
@@ -266,17 +373,17 @@ model on oMLX or mlx-lm.
    into the model directory, so that the stack is self-contained.
 2. A builder that cannot resolve the named server SHOULD fail the
    build, naming the model and the server.
-3. A builder that knows the server cannot load the weights' format
+3. A builder that knows the server cannot load the model files' format
    SHOULD fail the build, naming the model and the server.
 4. A builder SHOULD generate `serve`, and `check` where it can. These
    executables SHOULD include every serving parameter in them: the
-   weights' path, the context length, offload, concurrency.
+   model files' path, the context length, offload, concurrency.
 5. For an externally-hosted model, a builder SHOULD write
    `endpoint.json` from the declaration.
 
 If a serving parameter changes, the stack must be built again.
 
-### 3. Declaration
+### 4. Declaration
 
 §6.1 gains two optional fields:
 
@@ -293,21 +400,21 @@ model is self-contained or externally-hosted:
 - **Self-contained.** The model is part of the stack's dependency set,
   and the stack serves the model on launch, with no network access
   required. A self-contained model is declared by:
-  - `source` — where the weights come from, pinned by revision and
+  - `source` — where the model files come from, pinned by revision and
     content digest. Source does not have a defined schema.
-  - `server` — the name of the package that serves the weights.
+  - `server` — the name of the package that serves the model files.
 - **Externally-hosted.** The model is not part of the stack's
   dependency set; it is hosted at the defined endpoint. An
   externally-hosted model is declared by `url`, `model`, and
   `protocols`, which the builder writes to `endpoint.json`.
 
-### 4. Deployment patterns
+### 5. Deployment patterns
 
 A model can be served in one of the following ways:
 
 | Where the model is served | Managed by | Type |
 |---|---|---|
-| Local host | Agent stack ([Launch](#5-launch)) | Self-contained |
+| Local host | Agent stack ([Launch](#6-launch)) | Self-contained |
 | On the host | You | Externally-hosted, with a loopback `url` |
 | On another machine | Someone else | Externally-hosted |
 | On a third-party platform | Vendor | Externally-hosted |
@@ -316,7 +423,7 @@ One stack can contain multiple models with different deployment
 patterns. For example, a stack can contain a self-contained model and
 reference an externally-hosted model from a team server.
 
-### 5. Launch
+### 6. Launch
 
 The stack owns the lifecycle of every server it starts. A launcher that
 serves models SHOULD have the following properties:
@@ -350,9 +457,10 @@ resolving the agent and executing it):
    and a protocol the agent client speaks, and wait for the server to
    be ready. If the stack is already running via another launch, join
    the servers that are already running. For each externally-hosted
-   model, confirm that the endpoint is accepting requests and uses a
-   compatible protocol. If any of these steps fails, the stack SHOULD
-   refuse to launch and show the error to the user.
+   model, confirm that the endpoint is accepting requests, lists the
+   model, and speaks a protocol the agent client speaks (§1). If any
+   of these steps fails, the stack SHOULD refuse to launch and show
+   the error to the user.
 2. **Give the models to the agent client**, using the agent client's
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
@@ -368,7 +476,7 @@ resolving the agent and executing it):
    The wrapper starts or joins the servers, runs the agent client, and
    stops the servers once the last launch exits.
 
-### 6. Bindings
+### 7. Bindings
 
 As a Nix function argument:
 
@@ -402,7 +510,9 @@ publish the endpoints its stacks use.
 
 1. **Context length.** The context length is fixed in `serve` when the
    stack is built. How does the agent client find out what the context
-   length is so it knows how to avoid context overflows?
+   length is so it knows how to avoid context overflows? Every model
+   gateway reports a model's context window somewhere else (Appendix
+   A), so it is not part of the contract in §1.
 2. **Lazy loading.** To make it faster to launch a stack, should we
    consider only starting a server when an agent client makes a
    request to it?
@@ -414,20 +524,29 @@ publish the endpoints its stacks use.
 4. **Single base URL.** Some agent clients, such as Claude Code, take a
    single base URL. How do they reach models at different URLs?
 
-## Appendix A: Protocol names
+## Appendix A: Model gateways that meet §1
 
 This appendix is non-normative, and grows with each agent client and
-server tested. These protocol names are used by `serve --protocol`,
-`check --protocol`, and the `protocols` field of `endpoint.json`. An
-endpoint's URL includes the version prefix (e.g. `/v1`), and the rest
-of the protocol's path is appended to it.
+model gateway tested. Each server below was read from its source at
+the commit named, in November 2026; none was run for this table.
 
-| Name | API |
-|---|---|
-| `anthropic-messages` | Anthropic Messages API, `POST /v1/messages` |
-| `openai-chat-completions` | OpenAI Chat Completions API, `POST /v1/chat/completions` |
-| `open-responses` | [Open Responses](https://openresponses.org/), the open specification of OpenAI's Responses API, `POST /v1/responses` |
+| | llama.cpp `llama-server` | oMLX | Ollama |
+| --- | --- | --- | --- |
+| Source read | ggml-org/llama.cpp `6d54465e` | jundot/omlx `633d6cf6` | ollama/ollama `8ae8acb8` |
+| `anthropic-messages` | yes | yes | yes |
+| `openai-chat-completions` | yes | yes | yes |
+| `open-responses` | yes | yes | yes |
+| Every model at one endpoint | in router mode, started without `-m` | yes | yes |
+| `GET /v1/models` lists models not loaded | yes | yes | yes |
+| Loads the model a request names | yes, unless `--no-models-autoload` | yes, evicting the least recently used | yes |
+| Default port | 9931 | 8000 | 11434 |
+| Reports context window at | `/props` | `/v1/models/status` | `/api/ps` |
 
-Claude Code speaks `anthropic-messages`. llama-server serves
-`openai-chat-completions`, and `anthropic-messages`
-[since January 2026](https://huggingface.co/blog/ggml-org/anthropic-messages-api-in-llamacpp).
+The last row is why context length is still an open question: each
+server reports it somewhere else.
+
+On the agent client side, Claude Code speaks `anthropic-messages`.
+Codex speaks only `open-responses`. opencode and pi speak
+`openai-chat-completions`, and pi also `anthropic-messages`. A
+gateway that speaks only `openai-chat-completions`, such as
+`mlx_lm.server`, needs a router in front for Claude Code or Codex.
