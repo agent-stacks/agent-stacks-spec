@@ -779,8 +779,10 @@ endpoint wins; a later source is not merged into it:
      comma-separated list, like `protocols` in a `model.json`'s
      `endpoint`.
    - `AGENT_STACKS_MODEL` — the model to start with.
-   - `AGENT_STACKS_MODELS_DIR` — the directory the gateway serves
-     model files from, so launch can list models without asking it.
+   - `AGENT_STACKS_MODELS_DIR` — the directories the gateway serves
+     model files from, colon-separated, so launch can list models
+     without asking it. A gateway package's `serve` reads the same
+     variable ([§7](#serve)).
 3. **The stack.** The `endpoint` in the `model.json` of each
    externally-hosted model under `share/agent-models/`. A launcher
    whose stack ships `bin/<stack-name>-gateway` sets
@@ -925,11 +927,16 @@ agent-gateway-<name> serve [--listen <addr>] [<models dir>…] \
 `serve`:
 
 - prepares what its server takes from the models in each
-  `<models dir>` (by default the `share/agent-models/` of the
-  environment it runs in), using links only and never copying model
-  files, and skips with a warning every model `check` would skip.
-  Borrowed models in the Hugging Face cache are served as the server
-  serves them today.
+  `<models dir>`, using links only and never copying model files, and
+  skips with a warning every model `check` would skip. When two
+  directories hold a model with the same `id`, the first one named
+  wins and the other is skipped with a warning. Borrowed models in the
+  Hugging Face cache are served as the server serves them today.
+- with no `<models dir>`, serves the directories in
+  `AGENT_STACKS_MODELS_DIR`, a colon-separated list like `PATH`, and
+  without that the `share/agent-models/` of the environment it runs
+  in (`$FLOX_ENV/share/agent-models` in a Flox environment). A
+  service in an environment can then run `serve` with no arguments.
 - starts the server, listening at `<addr>` or at
   `127.0.0.1:<defaultPort>`, and passes `<server args>` to it
   unchanged.
@@ -941,6 +948,18 @@ agent-gateway-<name> serve [--listen <addr>] [<models dir>…] \
 - writes exactly one line to standard output: `ready` once the server
   is accepting requests, or `error <code> <message>` if it cannot
   serve at all, after which it exits non-zero.
+- on `SIGHUP`, once ready, SHOULD read its model directories again and
+  have the running server pick up the models added and drop the ones
+  removed, without a restart. When the reload fails, it warns and
+  keeps serving what it served before.
+
+Reloading is a SHOULD because the gateway is shared
+([§6](#6-launch)): installing a model package into an environment
+changes the directory a long-running `serve` reads, and a restart to
+see it would drop every launch's loaded models and requests in flight.
+Both llama.cpp's router mode and oMLX can re-read their models without
+restarting, so the first two packages do it; a server that cannot
+gets a restart from its service manager instead.
 
 A stack's `bin/<stack-name>-gateway` is its gateway's `serve`, pointed
 at the stack's own `share/agent-models/` with the stack's serving
@@ -1075,9 +1094,10 @@ publish the endpoints its stacks use.
    `bin/<stack>-gateway` when the stack is built. Every model gateway
    reports a model's context window somewhere else (Appendix A), so it
    is not part of the contract in [§1](#1-model-gateways-and-protocols),
-   but a gateway package's `status` reads it in one shape
-   ([§7](#7-gateway-packages)). Should launch pass that to the agent
-   client, and should a value the stack declares win over it?
+   but a gateway package's `status` reads it in one shape: the
+   running window of a loaded model, the trained one otherwise
+   ([§7](#status)). Should launch pass that to the agent client, and
+   should a value the stack declares win over it?
 2. **Lazy loading.** Resolved: a model gateway loads a model when a
    request names it ([§1](#1-model-gateways-and-protocols)), and the
    gateway is already running when a stack launches ([§6](#6-launch)).
@@ -1098,8 +1118,9 @@ publish the endpoints its stacks use.
    endpoint with no `protocols`, is that fallback part of this proposal,
    or left to each launcher?
 6. **`model.json` and the efforts it borrows from.** Resolved in
-   part: [§2](#modeljson) specifies `model.json`, a spike fed
-   llama.cpp and oMLX from it with links alone, and `endpoint.json` is
+   part: [§2](#modeljson) specifies `model.json`,
+   `agent-gateway-llama-cpp` and `agent-gateway-omlx` feed their
+   servers from it with links alone, and `endpoint.json` is
    its `endpoint` object, fields unchanged. What stays open is how it
    tracks three efforts it borrows from:
    - CNCF ModelPack PR #202, a typed `config`, which may give
