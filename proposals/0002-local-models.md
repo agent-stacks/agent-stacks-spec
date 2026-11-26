@@ -2,7 +2,8 @@
 
 - Status: Draft
 - Targets: [spec 0.1.0](../spec/0.1.0.md) §11.3 and related sections
-  (§5.1, §6.1, §6.2, §6.4, §7, §8, §9, §10).
+  (§5.1, §6.1, §6.2, §6.4, §7, §8, §9, §10). Its sandbox rule builds
+  on [Proposal 0001](0001-host-sandbox.md).
 - Scope: A stack can have any number of models. Some models are hosted
   by the stack itself and others are hosted elsewhere and referenced by
   the stack.
@@ -120,7 +121,9 @@ that limit what machines it can run on.
   that does so is a model gateway like any other (§1), and its rules
   are its own configuration.
 - **Egress enforcement.** This proposal does nothing to limit an agent
-  client's network access.
+  client's network access, beyond letting a sandbox reach the model
+  endpoint ([§6](#with-a-sandbox)). Proposal 0001 is where that limit
+  is set.
 - **Management of externally-hosted models.** Externally-hosted models
   may be accessed by the agent client in an agent stack, but an agent
   stack does not otherwise manage those models or the model gateways
@@ -550,6 +553,22 @@ Because the gateway outlives any one launch, the launcher needs no
 wrapper or watcher: §7's launcher still hands over to the agent client
 and gets out of the way.
 
+#### With a sandbox
+
+When the agent client runs inside a sandbox, as
+[Proposal 0001](0001-host-sandbox.md) proposes:
+
+1. The model gateway stays outside the sandbox. It is not the agent
+   client or one of its children, and an inference server needs the
+   accelerator, the memory, and the model files that a sandbox around
+   the agent client has no reason to grant.
+2. The launcher SHOULD add the endpoint's host and port to what the
+   stack implies, the second input of Proposal 0001's effective
+   configuration, and nothing more for the model: not the loopback
+   interface as a whole, and not the gateway's other ports.
+3. For an externally-hosted endpoint, that is its host name and port,
+   which is the kind of rule both sandboxes in Proposal 0001 enforce.
+
 #### Finding the endpoint
 
 A model the stack does not serve itself is reached at an endpoint.
@@ -677,6 +696,10 @@ publish the endpoints its stacks use.
    is more convenient for one person on one machine but needs a
    watcher that outlives the agent client, amending §7. Is that worth
    keeping as an option?
+9. **One loopback port through a sandbox.** Both sandboxes in Proposal
+   0001 filter by host name through a proxy. Can each allow
+   `127.0.0.1:<port>` and nothing else on loopback, or does a local
+   gateway open the whole interface?
 
 ## Appendix A: Model gateways that meet §1
 
