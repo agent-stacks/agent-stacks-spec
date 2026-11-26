@@ -18,10 +18,11 @@ the stack.
 Defining a model in a stack has four unique considerations:
 
 1. **Layout.** A stack MAY define models under
-   `<stack root>/share/agent-models/`, one directory per model. A model
-   hosted by the stack has its model files in that directory. A
-   model hosted elsewhere is represented as an `endpoint.json` file
-   saying where the model is hosted.
+   `<stack root>/share/agent-models/`, one directory per model, each
+   with a `model.json` that describes it. A model hosted by the stack
+   has its model files beside it, in `files/`. A model hosted
+   elsewhere has no files, and its `model.json` says where the model
+   is hosted.
 2. **Build.** For models hosted by the stack, the model file is fetched
    when the stack is built, and digest-pinned for reproducibility. The
    builder resolves the gateway package that serves them, and links it
@@ -97,8 +98,8 @@ machine:
 3. A third-party provider that hosts open models (e.g. OpenRouter).
 
 An agent stack should be able to work with these externally-hosted
-models too. These models are represented in the stack as an
-`endpoint.json` file saying where the model is hosted. See
+models too. These models are represented in the stack by a
+`model.json` whose `endpoint` says where the model is hosted. See
 [Deployment patterns](#5-deployment-patterns) for more.
 
 ### Self-contained models
@@ -184,10 +185,10 @@ products. These are the names:
 An endpoint's URL includes the version prefix (e.g. `/v1`), and the
 rest of the protocol's path is appended to it. These names are used by
 a gateway package's `describe` ([§7](#7-gateway-packages)),
-`AGENT_STACKS_MODEL_PROTOCOLS`, and the `protocols` field of
-`endpoint.json`. The list grows with each agent client and model
-gateway tested; a name that is not in it SHOULD NOT be used until it
-is added.
+`AGENT_STACKS_MODEL_PROTOCOLS`, and the `protocols` field of a
+`model.json`'s `endpoint` ([§2](#2-layout)). The list grows with each
+agent client and model gateway tested; a name that is not in it
+SHOULD NOT be used until it is added.
 
 No neutral standard covers all three. Model gateways copy vendor APIs,
 and "compatible" means "mostly": tool calls, streaming events, and
@@ -242,15 +243,18 @@ lives in the launcher beside the rest of its per-agent code.
 1. A stack MAY store models at
    `<stack root>/share/agent-models/<model-name>/`, one directory per
    model. Model names SHOULD be unique within a stack.
-2. A self-contained model's directory SHOULD contain the model files.
-   What serves them is the stack's gateway package, not the model
-   ([§7](#7-gateway-packages)).
-3. An externally-hosted model's directory SHOULD contain one file,
-   `endpoint.json`.
-4. The model files SHOULD be links into the stack's dependency set,
+2. Every model's directory SHOULD contain a `model.json`
+   ([below](#modeljson)) that describes the model.
+3. A self-contained model's directory SHOULD also contain `files/`,
+   holding the model files exactly as the model's `layout` arranges
+   them. What serves them is the stack's gateway package, not the
+   model ([§7](#7-gateway-packages)).
+4. An externally-hosted model's directory SHOULD contain only its
+   `model.json`, with an `endpoint` and no `files/`.
+5. The model files SHOULD be links into the stack's dependency set,
    similar to how plugin runtimes work (§8.3).
-5. `<model-name>` is how the stack refers to the model.
-6. A stack that carries a model SHOULD also provide
+6. `<model-name>` is how the stack refers to the model.
+7. A stack that carries a model SHOULD also provide
    `<stack root>/bin/<stack-name>-gateway`, the stack's own model
    gateway ([§6](#6-launch)).
 
@@ -264,40 +268,274 @@ caveman-stack/
     │   └── caveman/...
     └── agent-models/
         ├── qwen3-8b/                  self-contained
-        │   └── qwen3-8b-q4_k_m.gguf   link to the model file
+        │   ├── model.json
+        │   └── files/
+        │       ├── Qwen3-8B-Q4_K_M.gguf   link to the model file
+        │       └── LICENSE
         └── team-coder/                externally-hosted
-            └── endpoint.json
+            └── model.json             with an endpoint, no files/
 ```
 
 The `agent-models/` directory shows you every model in the stack. If a
 stack does not have an `agent-models/` directory, it runs exactly the
 same as it does today.
 
-#### `endpoint.json`
+A borrowed model ([§4](#4-declaration)) has no directory here and no
+`model.json`. It stays in the consumer's Hugging Face cache, and
+launch and the model gateway read that cache directly, as they do
+today.
 
-An externally-hosted model's directory contains an `endpoint.json` file
-in the following format:
+#### `model.json`
+
+`model.json` says what a model is and, for a model with files, how
+they are stored. A gateway package reads it to feed its inference
+server with links alone ([§7](#7-gateway-packages)), and launch reads
+it to match the model to the agent client. The same schema describes
+a local and an externally-hosted model.
+
+Where CNCF [ModelPack](https://github.com/modelpack/model-spec) has a
+name for a fact, `model.json` uses it, under ModelPack's `descriptor`
+and `config`. Where ModelPack has no field, or its shape is too loose
+to check against, the field is ours.
+
+| Field | Meaning | From |
+| --- | --- | --- |
+| `schemaVersion` | `1` | ours |
+| `id` | the model's ID, which every model gateway serves it as | ours |
+| `layout` | how `files/` is arranged | ours |
+| `format` | what the model files are | ModelPack's name, at the top level |
+| `entry` | what an inference server loads, relative to the model's directory | ours |
+| `source` | where the files came from: `hub`, `repo`, `revision` | ours |
+| `descriptor` | `family`, `licenses`, and ModelPack's other descriptor fields | ModelPack |
+| `config.architecture`, `config.paramSize` | the architecture and the counted parameter size | ModelPack |
+| `config.quantization` | the quantization, as an object | ModelPack's name, our shape |
+| `config.contextLength` | the context window the model was trained for | ours |
+| `config.capabilities` | what the model can do, such as `tool-use` and `vision` | ours (open question 6) |
+| `files[]` | each model file: `path`, `role`, `sha256`, `size` | ours, OpenSSF Model Signing digests |
+| `endpoint` | where an externally-hosted model is served: `url`, `model`, `protocols` | ours |
+
+Field names are camelCase throughout.
+
+##### Files or endpoint, never both
+
+A `model.json` has either the file fields (`layout`, `format`,
+`entry`, `files`) or `endpoint`, never both. `schemaVersion`, `id`,
+`descriptor` and `config` are common to both, so launch knows the
+context window and capabilities of a remote model as it does of a
+local one.
+
+A local model never names an endpoint. Its URL is not known when the
+stack is built: which model gateway serves it, and on which port, is
+decided when it runs, by the gateway package and by
+[Finding the endpoint](#finding-the-endpoint).
+
+##### `id`
+
+`id` is the model's API ID: the `id` that `GET /v1/models` lists and
+a request's `model` names, on every model gateway that serves it
+([§7](#7-gateway-packages)). So:
+
+1. It SHOULD be unique among the models an environment serves, and
+   SHOULD match `<model-name>`.
+2. It MUST NOT contain `/` or `:`. Gateways turn it into a file name
+   or a section name, and some give both characters a meaning of
+   their own.
+
+##### `layout`, `format` and `entry`
+
+`layout` says how `files/` is arranged. It is an open list; a new
+store is a new value, not a change to this schema:
+
+- `plain` — the repository snapshot as published.
+- `hf-cache` — a Hugging Face cache tree,
+  `models--<org>--<repo>/{refs,blobs,snapshots}`, with `refs/main`.
+- `ollama` — Ollama's manifests and blobs.
+
+`format` says what the files are: `gguf`, `mlx`, `safetensors`,
+`onnx`, and so on. It is independent of the layout, and it decides
+which inference servers can load the model. A gateway bridges any
+layout with links; nothing bridges a format its server cannot read.
+
+`entry` is what an inference server loads, relative to the model's
+directory, so it includes `files/` and any layout prefix: the
+directory for MLX, and for GGUF the file, or the first shard of a
+split file.
+
+##### `files[]`
+
+Every model file has an entry:
+
+- `path` — relative to the directory of `entry` (the directory
+  itself when `entry` is one), whatever the layout. For `hf-cache`
+  that is the snapshot directory.
+- `role` — one of the roles below.
+- `sha256` — the file's digest, which pins it.
+- `size` — its size in bytes.
+
+The `path` and `sha256` pairs are the digest list an OpenSSF
+[Model Signing](https://github.com/sigstore/model-transparency)
+manifest holds, so a model directory is one step from a signed one.
+Signing itself is out of scope.
+
+| Role | The file |
+| --- | --- |
+| `weights` | tensors: a GGUF file or shard, a safetensors file |
+| `config` | the model's configuration, such as `config.json` |
+| `tokenizer` | the tokenizer and its configuration |
+| `index` | the index of a sharded checkpoint |
+| `licence` | the licence |
+| `chat-template` | a chat template outside the weights or tokenizer |
+| `mmproj` | a vision projector, which llama.cpp loads beside the GGUF |
+| `draft` | a draft model for speculative decoding |
+| `other` | anything else |
+
+A gateway finds the files its server needs by role. llama.cpp, for
+one, needs `mmproj` beside the GGUF it loads.
+
+##### `config.quantization` and `config.capabilities`
+
+`quantization` is an object, so that it can be checked:
+
+- GGUF: `{ "type": "Q4_K_M" }`, from the header's `general.file_type`.
+- MLX and safetensors: `{ "bits": 4, "groupSize": 64 }`, from
+  `config.json`.
+
+`capabilities` is a list of names: `tool-use` when the chat template
+supports tool calls, `vision` when the model has a vision projector or
+a vision configuration. Launch uses it, with `contextLength`, to check
+a model against what the agent client needs, and to hide one that
+cannot serve it.
+
+##### Facts come from the files
+
+A builder SHOULD write `model.json` from the model files when it
+builds the model, never by hand and never from the Hub API:
+
+- GGUF: from the header (`general.architecture`, `general.file_type`,
+  `<arch>.context_length`, `general.size_label`).
+- MLX and safetensors: from `config.json`.
+
+The Hub API can disagree with the files. For Qwen2.5-0.5B-Instruct's
+GGUF it gives a context length of 8192, where the header says 32768,
+and 32768 is what llama.cpp serves. `paramSize` is the counted size,
+which can differ from the name a model is sold under.
+
+##### Examples
+
+A GGUF model, `plain` layout:
 
 ```json
 {
-  "url": "https://models.example.com/v1",
-  "model": "qwen3-coder-30b-a3b",
-  "protocols": ["anthropic-messages", "openai-chat-completions"]
+  "schemaVersion": 1,
+  "id": "qwen3-8b",
+  "layout": "plain",
+  "format": "gguf",
+  "entry": "files/Qwen3-8B-Q4_K_M.gguf",
+  "source": {
+    "hub": "huggingface",
+    "repo": "Qwen/Qwen3-8B-GGUF",
+    "revision": "<commit>"
+  },
+  "descriptor": {
+    "family": "qwen3",
+    "licenses": ["Apache-2.0"]
+  },
+  "config": {
+    "architecture": "qwen3",
+    "paramSize": "8b",
+    "quantization": { "type": "Q4_K_M" },
+    "contextLength": 32768,
+    "capabilities": ["tool-use"]
+  },
+  "files": [
+    { "path": "Qwen3-8B-Q4_K_M.gguf", "role": "weights",
+      "sha256": "<sha256>", "size": 5027783488 },
+    { "path": "LICENSE", "role": "licence",
+      "sha256": "<sha256>", "size": 11343 }
+  ]
 }
 ```
+
+An MLX model, `plain` layout:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "qwen3-coder-30b-a3b-4bit",
+  "layout": "plain",
+  "format": "mlx",
+  "entry": "files/",
+  "source": {
+    "hub": "huggingface",
+    "repo": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+    "revision": "<commit>"
+  },
+  "descriptor": {
+    "family": "qwen3",
+    "licenses": ["Apache-2.0"]
+  },
+  "config": {
+    "architecture": "qwen3_moe",
+    "paramSize": "30b",
+    "quantization": { "bits": 4, "groupSize": 64 },
+    "contextLength": 262144,
+    "capabilities": ["tool-use"]
+  },
+  "files": [
+    { "path": "config.json", "role": "config",
+      "sha256": "<sha256>", "size": 1102 },
+    { "path": "tokenizer.json", "role": "tokenizer",
+      "sha256": "<sha256>", "size": 11422654 },
+    { "path": "tokenizer_config.json", "role": "tokenizer",
+      "sha256": "<sha256>", "size": 9711 },
+    { "path": "chat_template.jinja", "role": "chat-template",
+      "sha256": "<sha256>", "size": 6116 },
+    { "path": "model.safetensors.index.json", "role": "index",
+      "sha256": "<sha256>", "size": 98412 },
+    { "path": "model-00001-of-00004.safetensors", "role": "weights",
+      "sha256": "<sha256>", "size": 5363922944 },
+    { "path": "model-00002-of-00004.safetensors", "role": "weights",
+      "sha256": "<sha256>", "size": 5366734592 },
+    { "path": "model-00003-of-00004.safetensors", "role": "weights",
+      "sha256": "<sha256>", "size": 5366734664 },
+    { "path": "model-00004-of-00004.safetensors", "role": "weights",
+      "sha256": "<sha256>", "size": 1086327552 },
+    { "path": "LICENSE", "role": "licence",
+      "sha256": "<sha256>", "size": 11343 }
+  ]
+}
+```
+
+An externally-hosted model, with no `files/`:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "team-coder",
+  "config": {
+    "contextLength": 131072,
+    "capabilities": ["tool-use"]
+  },
+  "endpoint": {
+    "url": "https://models.example.com/v1",
+    "model": "qwen3-coder-30b-a3b",
+    "protocols": ["anthropic-messages", "openai-chat-completions"]
+  }
+}
+```
+
+`endpoint` is the `endpoint.json` of an earlier draft, folded in with
+its fields unchanged:
 
 - `url` — the base URL the model is served at.
 - `model` — the name of the model to request.
 - `protocols` — the protocols the endpoint speaks (see
   [§1](#1-model-gateways-and-protocols)).
 
-`endpoint.json` SHOULD NOT hold a credential. Secrets are not yet part
-of the spec; this remains an open question (3).
-
-NOTE: `endpoint.json` is expected to be folded into the `model.json`
-every model directory will hold, as its `endpoint` object with these
-three fields unchanged. Until that file is specified, this proposal
-keeps `endpoint.json` (open question 6).
+`id` is how the stack and the agent client name the model; `model` is
+what the remote gateway calls it. `endpoint` SHOULD NOT hold a
+credential. Secrets are not yet part of the spec; this remains an open
+question (3).
 
 ### 3. Build
 
@@ -312,6 +550,9 @@ a large self-contained model to a stack:
 - A builder SHOULD store each model file once per digest, so that
   every stack with the same self-contained model links to the same
   file.
+- A builder SHOULD write each carried model's `model.json` when it
+  builds the model, reading its facts from the files, and record each
+  file's digest in its `files[]` ([§2](#modeljson)).
 - A launcher SHOULD NOT copy model files at launch (e.g. from the
   dependency set into a cache).
 
@@ -331,8 +572,8 @@ and an MLX model on oMLX or mlx-lm.
 4. A builder SHOULD put every serving parameter the stack decides (the
    context length, offload, concurrency) in `bin/<stack-name>-gateway`,
    passed through to the server.
-5. For an externally-hosted model, a builder SHOULD write
-   `endpoint.json` from the declaration.
+5. For an externally-hosted model, a builder SHOULD write a
+   `model.json` with an `endpoint` from the declaration.
 
 If a serving parameter changes, the stack must be built again.
 
@@ -359,14 +600,15 @@ model is self-contained or externally-hosted:
   and the stack serves the model on launch, with no network access
   required. A self-contained model is declared by:
   - `source` — where the model files come from, pinned by revision and
-    content digest. Source does not have a defined schema.
+    content digest. The builder writes the revision to `model.json`'s
+    `source`, and each file's digest to its `files[]`.
 
   The server is not part of a model's declaration. The stack's
   `gateway` serves every carried model.
 - **Externally-hosted.** The model is not part of the stack's
   dependency set; it is hosted at the defined endpoint. An
   externally-hosted model is declared by `url`, `model`, and
-  `protocols`, which the builder writes to `endpoint.json`.
+  `protocols`, which the builder writes to `model.json`'s `endpoint`.
 
 #### A model is carried or it is borrowed
 
@@ -381,9 +623,9 @@ does in §6.2, and a declaration SHOULD make that explicit:
   `~/.cache/huggingface/hub`) when the stack runs: whatever has been
   downloaded there, for example with `hf download`, at whatever
   revision. A borrowed model has no directory under
-  `share/agent-models/`. The model gateway serves it from the cache,
-  and launch finds it by the ID the gateway lists. It is declared by
-  the repository it comes from, with no digest.
+  `share/agent-models/` and no `model.json`. The model gateway serves
+  it from the cache, and launch finds it by the ID the gateway lists.
+  It is declared by the repository it comes from, with no digest.
 
 Both are legitimate. Borrowing is how a consumer tries a model before
 anyone packages it. A launcher SHOULD announce every borrowed model it
@@ -527,15 +769,17 @@ endpoint wins; a later source is not merged into it:
    service sets these beside it, which makes this the main path:
    - `AGENT_STACKS_MODEL_URL` — the endpoint.
    - `AGENT_STACKS_MODEL_PROTOCOLS` — the protocols it speaks, as a
-     comma-separated list, like `protocols` in `endpoint.json`.
+     comma-separated list, like `protocols` in a `model.json`'s
+     `endpoint`.
    - `AGENT_STACKS_MODEL` — the model to start with.
    - `AGENT_STACKS_MODELS_DIR` — the directory the gateway serves
      model files from, so launch can list models without asking it.
-3. **The stack.** The `endpoint.json` of each externally-hosted model
-   under `share/agent-models/`. A launcher whose stack ships
-   `bin/<stack-name>-gateway` sets `AGENT_STACKS_MODEL_URL` and
-   `AGENT_STACKS_MODEL_PROTOCOLS` for its own gateway when they are not
-   already set, so that gateway is found in step 2.
+3. **The stack.** The `endpoint` in the `model.json` of each
+   externally-hosted model under `share/agent-models/`. A launcher
+   whose stack ships `bin/<stack-name>-gateway` sets
+   `AGENT_STACKS_MODEL_URL` and `AGENT_STACKS_MODEL_PROTOCOLS` for its
+   own gateway when they are not already set, so that gateway is found
+   in step 2.
 4. **Asking.** With none of the above, launch sends `GET /v1/models`
    to loopback at the default ports of known model gateways (9931,
    8000, 11434, and LM Studio's 1234) and uses the first that answers.
@@ -547,7 +791,7 @@ start with. With several models and none chosen, the agent client's
 own model picker decides.
 
 `--model-api` is singular on purpose. It means "use this one", where
-the lists in the environment and in `endpoint.json` say what the
+the lists in the environment and in `model.json` say what the
 endpoint can do and leave the choice to the matching in
 [§1](#1-model-gateways-and-protocols).
 
@@ -621,20 +865,28 @@ Writes one JSON object, the gateway's profile, and starts nothing:
 agent-gateway-<name> check <model.json>…
 ```
 
-Each argument is a model's `model.json`; until that file is specified
-(open question 6), a model's directory under `share/agent-models/`.
-For each model, `check` writes one line, without loading anything:
+Each argument is a model's `model.json` ([§2](#modeljson)). For each
+model, `check` writes one line, without loading anything:
 
 - `<model-name> ok` when this gateway can serve the model on this
   host.
 - `<model-name> skip <code> <message>` when it cannot.
 
-It checks what can be known before a load: the model files' format and
-platform against `describe`, whether the gateway can hand the files to
-its server as they are laid out, and their size against the host's
-memory. Whether the server supports the model's architecture or
-quantization only shows when it loads the model. A model with an
-endpoint is always skipped: it never reaches a local server.
+It checks what can be known before a load: that the model has files
+or an endpoint and not both, the model files' format and platform
+against `describe`, whether the gateway can hand the files to its
+server as they are laid out, that `entry` and every file in `files[]`
+exist, and their size against the host's memory. Whether the server
+supports the model's architecture or quantization only shows when it
+loads the model. A model with an endpoint is always skipped: it never
+reaches a local server.
+
+For the size check, `check` SHOULD compare the sum of the `size` of
+the model's `weights` files with the memory the machine's accelerator
+can use, not with a flat share of its RAM. On macOS that is Metal's
+recommended working set (`recommendedMaxWorkingSetSize`), about 80 %
+of memory on a 64 GiB Mac. A model that does not fit is skipped with
+the code `memory`.
 
 #### `serve`
 
@@ -657,7 +909,8 @@ agent-gateway-<name> serve [--listen <addr>] [<models dir>…] \
 - serves every model it kept at that one endpoint, as
   [§1](#1-model-gateways-and-protocols) requires, and stays in the
   foreground until it receives `SIGTERM`, which it passes on to the
-  server.
+  server. Each model is listed and requested by its `model.json`'s
+  `id`.
 - writes exactly one line to standard output: `ready` once the server
   is accepting requests, or `error <code> <message>` if it cannot
   serve at all, after which it exits non-zero.
@@ -764,7 +1017,7 @@ command = "agent-gateway-llama-cpp serve"
 ```
 
 An externally-hosted model is installed the same way, from a package
-holding only its `endpoint.json`. That is how an organization can
+holding only its `model.json`. That is how an organization can
 publish the endpoints its stacks use.
 
 ## Open questions
@@ -779,9 +1032,9 @@ publish the endpoints its stacks use.
 2. **Lazy loading.** Resolved: a model gateway loads a model when a
    request names it ([§1](#1-model-gateways-and-protocols)), and the
    gateway is already running when a stack launches ([§6](#6-launch)).
-3. **Secrets.** In the current proposal, `endpoint.json` doesn't
-   include secrets, so if the endpoint for an externally-hosted model
-   requires secrets, we have no way of letting the agent client
+3. **Secrets.** In the current proposal, a `model.json`'s `endpoint`
+   doesn't include secrets, so if the endpoint for an externally-hosted
+   model requires secrets, we have no way of letting the agent client
    authenticate. How do we let agent clients authenticate without
    leaking secrets?
 4. **Single base URL.** Some agent clients, such as Claude Code, take a
@@ -795,14 +1048,20 @@ publish the endpoints its stacks use.
    ([§7](#7-gateway-packages)). For one it does not, such as a remote
    endpoint with no `protocols`, is that fallback part of this proposal,
    or left to each launcher?
-6. **`model.json`.** A model directory will hold a `model.json` that
-   describes the model: its format, its files and their digests, its
-   source, its context length. Its schema waits on a spike that feeds
-   each inference server from it with links alone. `endpoint.json` is
-   expected to become its `endpoint` object, fields unchanged, so that
-   a model has either model files or an endpoint and never both. Does
-   that fold work for externally-hosted models as written here, and
-   what else does a remote model's `model.json` need to say?
+6. **`model.json` and the efforts it borrows from.** Resolved in
+   part: [§2](#modeljson) specifies `model.json`, a spike fed
+   llama.cpp and oMLX from it with links alone, and `endpoint.json` is
+   its `endpoint` object, fields unchanged. What stays open is how it
+   tracks three efforts it borrows from:
+   - CNCF ModelPack PR #202, a typed `config`, which may give
+     `quantization` and `capabilities` shapes of their own.
+   - CNCF ModelPack PR #240, state artifacts.
+   - Ollama's per-runner manifest list, which records which of its
+     runners loads which files: prior art for the `ollama` layout and
+     for choosing a gateway by format.
+
+   When these land, should `model.json` follow them under a new
+   `schemaVersion`, or keep its own shapes and map between them?
 7. **Naming a borrowed model.** A borrowed model is declared by its
    repository, but launch sees the ID its model gateway lists, and
    gateways derive that ID differently. Is the repository enough for a
