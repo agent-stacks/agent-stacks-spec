@@ -770,15 +770,16 @@ Launch looks for one in this order, and the first source that names an
 endpoint wins; a later source is not merged into it:
 
 1. **Flags.** `--model-url <url>` names the endpoint,
-   `--model-api <protocol>` the protocol to use, and `--model <id>`
-   the model to start with. For one-off runs and scripts.
+   `--model-api <protocol>` the protocol to use, and
+   `--default-model <id>` the model to start with. For one-off runs
+   and scripts.
 2. **Environment.** An environment that runs a model gateway as a
    service sets these beside it, which makes this the main path:
    - `AGENT_STACKS_MODEL_URL` — the endpoint.
    - `AGENT_STACKS_MODEL_PROTOCOLS` — the protocols it speaks, as a
      comma-separated list, like `protocols` in a `model.json`'s
      `endpoint`.
-   - `AGENT_STACKS_MODEL` — the model to start with.
+   - `AGENT_STACKS_DEFAULT_MODEL` — the model to start with.
    - `AGENT_STACKS_MODELS_DIR` — the directories the gateway serves
      model files from, colon-separated, so launch can list models
      without asking it. A gateway package's `serve` reads the same
@@ -795,9 +796,9 @@ endpoint wins; a later source is not merged into it:
 
 Every source can name several models, which a single model variable
 could not. Every model the endpoint lists is offered to the agent
-client; `--model` and `AGENT_STACKS_MODEL` only choose the one to
-start with. With several models and none chosen, the agent client's
-own model picker decides.
+client; `--default-model` and `AGENT_STACKS_DEFAULT_MODEL` only choose
+the one to start with. With several models and none chosen, the agent
+client's own model picker decides.
 
 `--model-api` is singular on purpose. It means "use this one", where
 the lists in the environment and in `model.json` say what the
