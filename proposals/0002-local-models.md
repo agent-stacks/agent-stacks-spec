@@ -2,7 +2,7 @@
 
 - Status: Draft
 - Targets: [spec 0.1.0](../spec/0.1.0.md) §11.3 and related sections
-  (§5.1, §6.1, §7, §8, §9, §10).
+  (§5.1, §6.1, §6.2, §6.4, §7, §8, §9, §10).
 - Scope: A stack can have any number of models. Some models are hosted
   by the stack itself and others are hosted elsewhere and referenced by
   the stack.
@@ -27,8 +27,8 @@ Defining a model in a stack has four unique considerations:
    a plugin's runtimes. The build SHOULD fail if either of these steps
    fails.
 3. **Declaration.** The vocabulary in §6.1 defines `models`, either
-   carried, borrowed, or externally-hosted, and `defaultModel`, the
-   model used by the agent client.
+   carried, borrowed, or externally-hosted, and `modelRoles`, the
+   model the agent client uses for each of its roles.
 4. **Launch.** The stack owns the lifecycle of every inference server
    it starts. When you launch a stack, each inference server starts on
    a loopback port, which gives the agent client access to the models.
@@ -396,10 +396,12 @@ If a serving parameter changes, the stack must be built again.
 §6.1 gains two optional fields:
 
 - `models` — the models the agent client can use.
-- `defaultModel` — the name of the model the agent client uses by
-  default. If only one model is defined, the builder SHOULD default to
-  that one. Otherwise, the builder SHOULD fail if there are multiple
-  models and no default is specified.
+- `modelRoles` — the model the agent client uses for each of its
+  roles (see [Model roles](#model-roles)). Every agent client has the
+  role `default`, the model it starts with. If only one model is
+  defined, the builder SHOULD make it the default. Otherwise, the
+  builder SHOULD fail if there are multiple models and no default is
+  specified.
 
 Each model has a `name`, which is its directory under
 `share/agent-models/`. A declaration SHOULD be explicit about whether a
@@ -439,6 +441,34 @@ offers, on every launch, naming where it found it, as §9.3 asks for an
 agent client resolved from the consumer's environment. An
 externally-hosted model is neither carried nor borrowed: it has no
 model files.
+
+#### Model roles
+
+Some agent clients use more than one model in a session. Claude Code,
+for one, picks a model by task: its `opus`, `sonnet`, and `haiku`
+aliases, and a model for subagents. `modelRoles` maps each role to a
+model, in the agent client's own words:
+
+| Agent client | Roles | Set at launch through |
+| --- | --- | --- |
+| Claude Code | `default`, `opus`, `sonnet`, `haiku`, `subagent` | `--model`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL` |
+| Any other | `default` | the agent client's own model setting |
+
+1. A role names a model in `models`. A builder SHOULD fail when it
+   names one that is not there, naming the role and the model.
+2. An agent client with no roles takes only `default`. A launcher
+   SHOULD warn about a role the stack's agent client does not have,
+   and otherwise ignore it.
+3. A launcher SHOULD set every role the declaration leaves out to the
+   default model, so that no role falls back to a model the stack does
+   not name. For a stack declared for privacy, that fallback is
+   usually a cloud model.
+
+This amends §6.4, which says a declaration does not name per-agent
+configuration. A stack names one agent client (§5.4), so its
+declaration MAY say which model that agent uses for each of its roles.
+The role names are the agent client's; the flags and variables that
+set them stay with the launch (§7), as §6.4 intends.
 
 ### 5. Deployment patterns
 
@@ -496,7 +526,9 @@ resolving the agent and executing it):
 2. **Give the models to the agent client**, using the agent client's
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
-   multiple models in a stack, `defaultModel` is the one to start with.
+   multiple models in a stack, the `default` role is the one to start
+   with, and every other role is set as [Model roles](#model-roles)
+   says.
 3. **Manage server lifetimes** as defined above, even if the agent
    client crashes. This requires a wrapper or service manager, which
    amends §7. For example:
@@ -561,7 +593,20 @@ mkAgentStack {
 
 The model's source and server live in the model's package, and the
 stack expression only names it. With one model, that model is also the
-default.
+default. With several, `modelRoles` says which is which:
+
+```nix
+mkAgentStack {
+  name = "caveman-stack";
+  harness = claude-code;
+  plugins = [ agent-plugin-caveman ];
+  models = [ agent-model-qwen3-8b agent-model-qwen3-0_6b ];
+  modelRoles = {
+    default = "qwen3-8b";
+    haiku = "qwen3-0.6b";
+  };
+}
+```
 
 As an environment manifest:
 
