@@ -24,9 +24,9 @@ Defining a model in a stack has four unique considerations:
    saying where the model is hosted.
 2. **Build.** For models hosted by the stack, the model file is fetched
    when the stack is built, and digest-pinned for reproducibility. The
-   builder resolves the server, and links it similar to how §8 resolves
-   a plugin's runtimes. The build SHOULD fail if either of these steps
-   fails.
+   builder resolves the gateway package that serves them, and links it
+   similar to how §8 resolves a plugin's runtimes. The build SHOULD
+   fail if either of these steps fails.
 3. **Declaration.** The vocabulary in §6.1 defines `models`, either
    carried, borrowed, or externally-hosted, and `modelRoles`, the
    model the agent client uses for each of its roles.
@@ -107,8 +107,9 @@ A self-contained model consists of:
 
 1. The model files (e.g. GGUF, MLX).
 2. The inference server (e.g. llama.cpp, Ollama, oMLX, vLLM) and its
-   dependencies (e.g. CUDA).
-3. A `bin/serve` executable that starts the server.
+   dependencies (e.g. CUDA), wrapped in a gateway package
+   ([§7](#7-gateway-packages)).
+3. A `bin/<stack>-gateway` executable that serves them.
 
 NOTE: A self-contained model MAY have specific hardware requirements
 that limit what machines it can run on.
@@ -181,7 +182,8 @@ products. These are the names:
 
 An endpoint's URL includes the version prefix (e.g. `/v1`), and the
 rest of the protocol's path is appended to it. These names are used by
-`serve --protocol`, `check --protocol`, and the `protocols` field of
+a gateway package's `describe` ([§7](#7-gateway-packages)),
+`AGENT_STACKS_MODEL_PROTOCOLS`, and the `protocols` field of
 `endpoint.json`. The list grows with each agent client and model
 gateway tested; a name that is not in it SHOULD NOT be used until it
 is added.
@@ -239,14 +241,13 @@ lives in the launcher beside the rest of its per-agent code.
 1. A stack MAY store models at
    `<stack root>/share/agent-models/<model-name>/`, one directory per
    model. Model names SHOULD be unique within a stack.
-2. A self-contained model's directory SHOULD contain the model files
-   and a `bin/` folder containing an executable named `serve` and a
-   link to the server it runs. The `bin/` folder MAY also contain an
-   executable named `check`.
+2. A self-contained model's directory SHOULD contain the model files.
+   What serves them is the stack's gateway package, not the model
+   ([§7](#7-gateway-packages)).
 3. An externally-hosted model's directory SHOULD contain one file,
    `endpoint.json`.
-4. The model files and the server SHOULD be links into the stack's
-   dependency set, similar to how plugin runtimes work (§8.3).
+4. The model files SHOULD be links into the stack's dependency set,
+   similar to how plugin runtimes work (§8.3).
 5. `<model-name>` is how the stack refers to the model.
 6. A stack that carries a model SHOULD also provide
    `<stack root>/bin/<stack-name>-gateway`, the stack's own model
@@ -256,16 +257,12 @@ lives in the launcher beside the rest of its per-agent code.
 caveman-stack/
 ├── bin/
 │   ├── caveman-stack
-│   └── caveman-stack-gateway          serves the carried models
+│   └── caveman-stack-gateway          agent-gateway-llama-cpp serve
 └── share/
     ├── agent-plugins/
     │   └── caveman/...
     └── agent-models/
         ├── qwen3-8b/                  self-contained
-        │   ├── bin/
-        │   │   ├── serve              the serve contract
-        │   │   ├── check              optional host check
-        │   │   └── llama-server       link to the server it runs
         │   └── qwen3-8b-q4_k_m.gguf   link to the model file
         └── team-coder/                externally-hosted
             └── endpoint.json
@@ -274,71 +271,6 @@ caveman-stack/
 The `agent-models/` directory shows you every model in the stack. If a
 stack does not have an `agent-models/` directory, it runs exactly the
 same as it does today.
-
-#### `serve`
-
-`serve` is the interface between a launcher and a self-contained model.
-The launcher runs it as:
-
-```sh
-<model dir>/bin/serve --listen 127.0.0.1:<port> --protocol <name>
-```
-
-Additional options are defined in `serve` when the stack is built. The
-on-disk representation defines precisely how the model will be served.
-
-`serve`:
-
-- serves the model at that address with the specified protocol. It
-  stays in the foreground, answering requests that name
-  `<model-name>`, until it receives `SIGTERM`.
-- writes exactly one line to standard output: `ready` once the model
-  is loaded and accepting requests, or `error <code> <message>` if it
-  cannot serve the model, after which it exits non-zero.
-- writes everything else, including the server logs, to standard
-  error.
-
-The `<code>` is one of:
-
-| Code | Meaning |
-|---|---|
-| `protocol` | the server does not speak the protocol |
-| `address` | the address cannot be listened on |
-| `weights` | the model files are missing or will not load |
-| `memory` | the host does not have enough memory |
-| `host` | the host doesn't meet some other requirement: an accelerator, a driver, an operating system version |
-| `other` | catch-all for other errors |
-
-In practice `serve` is a short script that the builder generates. For
-the model above, the core of the script might look like this:
-
-```sh
-"$here/llama-server" --model "$here/../qwen3-8b-q4_k_m.gguf" \
-  --alias qwen3-8b --ctx-size 32768 \
-  --host "$host" --port "$port" >&2 &
-```
-
-In addition, the script needs to:
-
-1. Parse its two arguments (`--listen` and `--protocol`).
-2. Refuse a protocol that llama-server doesn't support.
-3. Wait for the server's `/health` endpoint before printing `ready`.
-4. Pass `SIGTERM` on to the server when the stack is torn down.
-
-#### `check`
-
-Models can be large and take a long time to start. To save time in
-failure scenarios, a self-contained model's directory MAY also contain a
-`bin/check` executable, which can perform some fast checks to determine
-if the model's requirements are met. It takes a single argument
-(`--protocol <name>`) and writes one line to standard output:
-
-- `ok` when the host can serve the model as built.
-- `error <code> <message>` (similar to `serve`) when the model's
-  requirements are not met.
-
-When `bin/check` is present, a launcher SHOULD run it before `serve`.
-A consumer or tool can also run it without launching anything.
 
 #### `endpoint.json`
 
@@ -382,19 +314,22 @@ a large self-contained model to a stack:
 - A launcher SHOULD NOT copy model files at launch (e.g. from the
   dependency set into a cache).
 
-A model's declaration specifies the inference server that should be
-used. For example, a GGUF file runs on llama.cpp or Ollama, and an MLX
-model on oMLX or mlx-lm.
+A stack's declaration names the gateway package that serves its
+carried models. For example, a GGUF file runs on llama.cpp or Ollama,
+and an MLX model on oMLX or mlx-lm.
 
-1. A builder SHOULD resolve the named server to a package and link it
-   into the model directory, so that the stack is self-contained.
-2. A builder that cannot resolve the named server SHOULD fail the
-   build, naming the model and the server.
-3. A builder that knows the server cannot load the model files' format
-   SHOULD fail the build, naming the model and the server.
-4. A builder SHOULD generate `serve`, and `check` where it can. These
-   executables SHOULD include every serving parameter in them: the
-   model files' path, the context length, offload, concurrency.
+1. A builder SHOULD resolve the named gateway package and link it into
+   the stack's dependency set, so that the stack is self-contained,
+   and write `bin/<stack-name>-gateway` to run its `serve` over the
+   stack's own `share/agent-models/`.
+2. A builder that cannot resolve the named gateway package SHOULD fail
+   the build, naming the stack and the gateway.
+3. A builder SHOULD run the gateway's `check` on every carried model,
+   and fail the build on a model the gateway skips for its format or
+   platform, naming the model, the gateway, and the reason.
+4. A builder SHOULD put every serving parameter the stack decides (the
+   context length, offload, concurrency) in `bin/<stack-name>-gateway`,
+   passed through to the server.
 5. For an externally-hosted model, a builder SHOULD write
    `endpoint.json` from the declaration.
 
@@ -402,9 +337,12 @@ If a serving parameter changes, the stack must be built again.
 
 ### 4. Declaration
 
-§6.1 gains two optional fields:
+§6.1 gains three optional fields:
 
 - `models` — the models the agent client can use.
+- `gateway` — the gateway package ([§7](#7-gateway-packages)) that
+  serves the stack's carried models. A builder SHOULD fail when a
+  stack carries a model and names no gateway.
 - `modelRoles` — the model the agent client uses for each of its
   roles (see [Model roles](#model-roles)). Every agent client has the
   role `default`, the model it starts with. If only one model is
@@ -421,7 +359,9 @@ model is self-contained or externally-hosted:
   required. A self-contained model is declared by:
   - `source` — where the model files come from, pinned by revision and
     content digest. Source does not have a defined schema.
-  - `server` — the name of the package that serves the model files.
+
+  The server is not part of a model's declaration. The stack's
+  `gateway` serves every carried model.
 - **Externally-hosted.** The model is not part of the stack's
   dependency set; it is hosted at the defined endpoint. An
   externally-hosted model is declared by `url`, `model`, and
@@ -510,7 +450,10 @@ A stack that carries models has two executables, one for each side:
   endpoint.
 
 The launcher never starts a model gateway, the stack's own or any
-other. It connects to one that is running, or says that none is.
+other. It connects to one that is running, or says that none is. A
+launcher whose stack names a gateway package SHOULD record which one
+(for example in `AGENT_STACKS_GATEWAY`), so that launch and other
+tools can call its `describe` and `status`.
 
 The stack's own gateway SHOULD have the following properties:
 
@@ -605,12 +548,168 @@ own model picker decides.
 the lists in the environment and in `endpoint.json` say what the
 endpoint can do and leave the choice to the matching in §1.
 
-When a source names an endpoint but not its protocols, and always when
-launch found it by asking, launch does not know what the endpoint
-speaks: no model gateway reports it, and `GET /v1/models` lists models,
-not APIs. See open question 5.
+When a source names an endpoint but not its protocols, launch asks the
+gateway package's `describe` when it knows the package (§7). Otherwise,
+and always when launch found the endpoint by asking, launch does not
+know what the endpoint speaks: no model gateway reports it, and
+`GET /v1/models` lists models, not APIs. See open question 5.
 
-### 7. Bindings
+### 7. Gateway packages
+
+A model gateway is wrapped for agent stacks by a package named
+`agent-gateway-<name>`, one per inference server:
+`agent-gateway-llama-cpp`, `agent-gateway-omlx`,
+`agent-gateway-ollama`. The server itself is untouched; the package
+gives a builder, a launcher, and other tools one small interface
+instead of each server's own endpoints and flags. A new inference
+server is a new package, not a new launcher.
+
+This replaces the per-model `serve` and `check` of an earlier draft.
+They move from each model to each gateway, which fits a gateway that
+serves every model at one endpoint (§1) and that the user runs (§6).
+It follows the `agent-sandbox-*` packages that carry Proposal 0001's
+sandboxes: one package per backend, behind one contract.
+
+1. A gateway package SHOULD provide one executable,
+   `bin/agent-gateway-<name>`, with the four commands below.
+2. It SHOULD pin the version of the server it wraps and carry the
+   server in its dependency set.
+3. It SHOULD run a contract test in its own build that exercises every
+   command against the server it pins, as the `agent-sandbox-*`
+   packages do.
+4. It SHOULD stay thin. Anything the contract does not name is the
+   server's own configuration, and `serve` passes it through.
+
+Each command writes its result to standard output and everything else,
+including the server's logs, to standard error.
+
+#### `describe`
+
+```sh
+agent-gateway-<name> describe
+```
+
+Writes one JSON object, the gateway's profile, and starts nothing:
+
+```json
+{
+  "formats": ["gguf"],
+  "platforms": ["aarch64-darwin", "x86_64-linux", "aarch64-linux"],
+  "version": "<pinned server version>",
+  "protocols": ["anthropic-messages", "openai-chat-completions",
+                "open-responses"],
+  "defaultPort": 9931
+}
+```
+
+- `formats` — the model file formats its inference server loads.
+- `platforms` — the platforms the server runs on.
+- `version` — the version of the server the package pins.
+- `protocols` — the protocols (§1) the server speaks. This is how
+  launch learns what a gateway it knows speaks.
+- `defaultPort` — where `serve` listens when not told otherwise.
+
+#### `check`
+
+```sh
+agent-gateway-<name> check <model.json>…
+```
+
+Each argument is a model's `model.json`; until that file is specified
+(open question 6), a model's directory under `share/agent-models/`.
+For each model, `check` writes one line, without loading anything:
+
+- `<model-name> ok` when this gateway can serve the model on this
+  host.
+- `<model-name> skip <code> <message>` when it cannot.
+
+It checks what can be known before a load: the model files' format and
+platform against `describe`, whether the gateway can hand the files to
+its server as they are laid out, and their size against the host's
+memory. Whether the server supports the model's architecture or
+quantization only shows when it loads the model. A model with an
+endpoint is always skipped: it never reaches a local server.
+
+#### `serve`
+
+```sh
+agent-gateway-<name> serve [--listen <addr>] [<models dir>…] \
+  [-- <server args>]
+```
+
+`serve`:
+
+- prepares what its server takes from the models in each
+  `<models dir>` (by default the `share/agent-models/` of the
+  environment it runs in), using links only and never copying model
+  files, and skips with a warning every model `check` would skip.
+  Borrowed models in the Hugging Face cache are served as the server
+  serves them today.
+- starts the server, listening at `<addr>` or at
+  `127.0.0.1:<defaultPort>`, and passes `<server args>` to it
+  unchanged.
+- serves every model it kept at that one endpoint, as §1 requires,
+  and stays in the foreground until it receives `SIGTERM`, which it
+  passes on to the server.
+- writes exactly one line to standard output: `ready` once the server
+  is accepting requests, or `error <code> <message>` if it cannot
+  serve at all, after which it exits non-zero.
+
+A stack's `bin/<stack-name>-gateway` is its gateway's `serve`, pointed
+at the stack's own `share/agent-models/` with the stack's serving
+parameters (§3). In an environment, a service runs `serve` instead.
+
+For llama.cpp, the core of `serve` might look like this: a directory
+of links to each GGUF file, and `llama-server` in router mode over it.
+
+```sh
+for m in "$@"; do link_gguf "$m" "$state/models"; done
+llama-server --models-dir "$state/models" \
+  --host "$host" --port "$port" "${server_args[@]}" >&2 &
+```
+
+#### `status`
+
+```sh
+agent-gateway-<name> status --url <url>
+```
+
+Asks a running gateway at `<url>` what it serves, and writes one JSON
+object in the same shape for every server:
+
+```json
+{
+  "models": [
+    { "id": "qwen3-8b", "loaded": true, "contextLength": 32768 }
+  ]
+}
+```
+
+This is where the differences in Appendix A's last row end: each
+package knows where its server reports a model's context window.
+
+#### Codes
+
+`check` and `serve` share one set of codes:
+
+| Code | Meaning |
+| --- | --- |
+| `address` | the address cannot be listened on |
+| `format` | the server does not load the model files' format |
+| `platform` | the server does not run on this platform |
+| `weights` | the model files are missing or will not load |
+| `memory` | the host does not have enough memory |
+| `host` | the host doesn't meet some other requirement: an accelerator, a driver, an operating system version |
+| `endpoint` | the model has an endpoint, and is not served locally |
+| `other` | catch-all for other errors |
+
+#### A gateway the user already runs
+
+`describe`, `check`, and `status` start nothing, so they work against a
+server the user already runs, such as Ollama's app, as well as against
+the stack's own gateway. Only `serve` starts a server.
+
+### 8. Bindings
 
 As a Nix function argument:
 
@@ -620,12 +719,14 @@ mkAgentStack {
   harness = claude-code;
   plugins = [ agent-plugin-caveman ];
   models = [ agent-model-qwen3-8b ];
+  gateway = agent-gateway-llama-cpp;
 }
 ```
 
-The model's source and server live in the model's package, and the
-stack expression only names it. With one model, that model is also the
-default. With several, `modelRoles` says which is which:
+The model's source lives in the model's package and the server in the
+gateway package, and the stack expression only names them. With one
+model, that model is also the default. With several, `modelRoles`
+says which is which:
 
 ```nix
 mkAgentStack {
@@ -633,6 +734,7 @@ mkAgentStack {
   harness = claude-code;
   plugins = [ agent-plugin-caveman ];
   models = [ agent-model-qwen3-8b agent-model-qwen3-0_6b ];
+  gateway = agent-gateway-llama-cpp;
   modelRoles = {
     default = "qwen3-8b";
     haiku = "qwen3-0.6b";
@@ -640,13 +742,17 @@ mkAgentStack {
 }
 ```
 
-As an environment manifest:
+As an environment manifest, where a service runs the gateway:
 
 ```toml
 [install]
-claude-code.pkg-path          = "claude-code"
-agent-plugin-caveman.pkg-path = "agent-stacks/agent-plugin-caveman"
-agent-model-qwen3-8b.pkg-path = "agent-stacks/agent-model-qwen3-8b"
+claude-code.pkg-path             = "claude-code"
+agent-plugin-caveman.pkg-path    = "agent-stacks/agent-plugin-caveman"
+agent-model-qwen3-8b.pkg-path    = "agent-stacks/agent-model-qwen3-8b"
+agent-gateway-llama-cpp.pkg-path = "agent-stacks/agent-gateway-llama-cpp"
+
+[services.gateway]
+command = "agent-gateway-llama-cpp serve"
 ```
 
 An externally-hosted model is installed the same way, from a package
@@ -655,11 +761,12 @@ publish the endpoints its stacks use.
 
 ## Open questions
 
-1. **Context length.** The context length is fixed in `serve` when the
-   stack is built. How does the agent client find out what the context
-   length is so it knows how to avoid context overflows? Every model
-   gateway reports a model's context window somewhere else (Appendix
-   A), so it is not part of the contract in §1.
+1. **Context length.** The context length is fixed in
+   `bin/<stack>-gateway` when the stack is built. Every model gateway
+   reports a model's context window somewhere else (Appendix A), so it
+   is not part of the contract in §1, but a gateway package's `status`
+   reads it in one shape (§7). Should launch pass that to the agent
+   client, and should a value the stack declares win over it?
 2. **Lazy loading.** Resolved: a model gateway loads a model when a
    request names it (§1), and the gateway is already running when a
    stack launches (§6).
@@ -674,8 +781,11 @@ publish the endpoints its stacks use.
    it. When launch finds an endpoint by asking, or a source gives no
    protocols, launch has to recognise the gateway by its own endpoints
    (llama.cpp's `/props`, Ollama's `/api/ps`, oMLX's
-   `/v1/models/status`) or make a test call per protocol. Is that
-   fallback part of this proposal, or left to each launcher?
+   `/v1/models/status`) or make a test call per protocol. A gateway
+   package's `describe` answers this for a gateway launch knows (§7).
+   For one it does not, such as a remote endpoint with no
+   `protocols`, is that fallback part of this proposal, or left to
+   each launcher?
 6. **`model.json`.** A model directory will hold a `model.json` that
    describes the model: its format, its files and their digests, its
    source, its context length. Its schema waits on a spike that feeds
@@ -700,6 +810,11 @@ publish the endpoints its stacks use.
    0001 filter by host name through a proxy. Can each allow
    `127.0.0.1:<port>` and nothing else on loopback, or does a local
    gateway open the whole interface?
+10. **Serving parameters per model.** `serve` takes one set of server
+    arguments for all the models it serves, but a context length or
+    an offload setting is often per model. Does that belong in
+    `model.json`, in the gateway's own per-model configuration (such
+    as a llama.cpp preset file), or in both?
 
 ## Appendix A: Model gateways that meet §1
 
