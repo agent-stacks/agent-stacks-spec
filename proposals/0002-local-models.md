@@ -118,9 +118,10 @@ that limit what machines it can run on.
 
 - **Model routing.** A stack can give its agent client several models.
   However, a stack only ever defines a single default; automatically
-  routing a request to the best model is not supported. A router
-  that does so is a model gateway like any other (§1), and its rules
-  are its own configuration.
+  routing a request to the best model is not supported. A router that
+  does so is a model gateway like any other
+  ([§1](#1-model-gateways-and-protocols)), and its rules are its own
+  configuration.
 - **Egress enforcement.** This proposal does nothing to limit an agent
   client's network access, beyond letting a sandbox reach the model
   endpoint ([§6](#with-a-sandbox)). Proposal 0001 is where that limit
@@ -480,11 +481,12 @@ resolving the agent and executing it):
 1. **Find and check the endpoint**, as described in
    [Finding the endpoint](#finding-the-endpoint), and confirm that it
    is accepting requests, lists the models, and speaks a protocol the
-   agent client speaks (§1). When nothing answers, the launcher SHOULD
-   refuse to launch, say that the model gateway is not up, and name
-   the command that starts it, e.g. "the model gateway isn't up yet:
-   run caveman-stack-gateway". If any other step fails, the stack
-   SHOULD refuse to launch and show the error to the user.
+   agent client speaks ([§1](#1-model-gateways-and-protocols)). When
+   nothing answers, the launcher SHOULD refuse to launch, say that the
+   model gateway is not up, and name the command that starts it, e.g.
+   "the model gateway isn't up yet: run caveman-stack-gateway". If any
+   other step fails, the stack SHOULD refuse to launch and show the
+   error to the user.
 2. **Give the models to the agent client**, using the agent client's
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
@@ -493,8 +495,8 @@ resolving the agent and executing it):
    says.
 
 Because the gateway outlives any one launch, the launcher needs no
-wrapper or watcher: §7's launcher still hands over to the agent client
-and gets out of the way.
+wrapper or watcher: the launcher of spec §7 still hands over to the
+agent client and gets out of the way.
 
 #### With a sandbox
 
@@ -546,13 +548,15 @@ own model picker decides.
 
 `--model-api` is singular on purpose. It means "use this one", where
 the lists in the environment and in `endpoint.json` say what the
-endpoint can do and leave the choice to the matching in §1.
+endpoint can do and leave the choice to the matching in
+[§1](#1-model-gateways-and-protocols).
 
 When a source names an endpoint but not its protocols, launch asks the
-gateway package's `describe` when it knows the package (§7). Otherwise,
-and always when launch found the endpoint by asking, launch does not
-know what the endpoint speaks: no model gateway reports it, and
-`GET /v1/models` lists models, not APIs. See open question 5.
+gateway package's `describe` when it knows the package
+([§7](#7-gateway-packages)). Otherwise, and always when launch found the
+endpoint by asking, launch does not know what the endpoint speaks: no
+model gateway reports it, and `GET /v1/models` lists models, not APIs.
+See open question 5.
 
 ### 7. Gateway packages
 
@@ -566,9 +570,10 @@ server is a new package, not a new launcher.
 
 This replaces the per-model `serve` and `check` of an earlier draft.
 They move from each model to each gateway, which fits a gateway that
-serves every model at one endpoint (§1) and that the user runs (§6).
-It follows the `agent-sandbox-*` packages that carry Proposal 0001's
-sandboxes: one package per backend, behind one contract.
+serves every model at one endpoint
+([§1](#1-model-gateways-and-protocols)) and that the user runs
+([§6](#6-launch)). It follows the `agent-sandbox-*` packages that carry
+Proposal 0001's sandboxes: one package per backend, behind one contract.
 
 1. A gateway package SHOULD provide one executable,
    `bin/agent-gateway-<name>`, with the four commands below.
@@ -605,8 +610,9 @@ Writes one JSON object, the gateway's profile, and starts nothing:
 - `formats` — the model file formats its inference server loads.
 - `platforms` — the platforms the server runs on.
 - `version` — the version of the server the package pins.
-- `protocols` — the protocols (§1) the server speaks. This is how
-  launch learns what a gateway it knows speaks.
+- `protocols` — the protocols
+  ([§1](#1-model-gateways-and-protocols)) the server speaks. This is
+  how launch learns what a gateway it knows speaks.
 - `defaultPort` — where `serve` listens when not told otherwise.
 
 #### `check`
@@ -648,16 +654,18 @@ agent-gateway-<name> serve [--listen <addr>] [<models dir>…] \
 - starts the server, listening at `<addr>` or at
   `127.0.0.1:<defaultPort>`, and passes `<server args>` to it
   unchanged.
-- serves every model it kept at that one endpoint, as §1 requires,
-  and stays in the foreground until it receives `SIGTERM`, which it
-  passes on to the server.
+- serves every model it kept at that one endpoint, as
+  [§1](#1-model-gateways-and-protocols) requires, and stays in the
+  foreground until it receives `SIGTERM`, which it passes on to the
+  server.
 - writes exactly one line to standard output: `ready` once the server
   is accepting requests, or `error <code> <message>` if it cannot
   serve at all, after which it exits non-zero.
 
 A stack's `bin/<stack-name>-gateway` is its gateway's `serve`, pointed
 at the stack's own `share/agent-models/` with the stack's serving
-parameters (§3). In an environment, a service runs `serve` instead.
+parameters ([§3](#3-build)). In an environment, a service runs `serve`
+instead.
 
 For llama.cpp, the core of `serve` might look like this: a directory
 of links to each GGUF file, and `llama-server` in router mode over it.
@@ -764,12 +772,13 @@ publish the endpoints its stacks use.
 1. **Context length.** The context length is fixed in
    `bin/<stack>-gateway` when the stack is built. Every model gateway
    reports a model's context window somewhere else (Appendix A), so it
-   is not part of the contract in §1, but a gateway package's `status`
-   reads it in one shape (§7). Should launch pass that to the agent
+   is not part of the contract in [§1](#1-model-gateways-and-protocols),
+   but a gateway package's `status` reads it in one shape
+   ([§7](#7-gateway-packages)). Should launch pass that to the agent
    client, and should a value the stack declares win over it?
 2. **Lazy loading.** Resolved: a model gateway loads a model when a
-   request names it (§1), and the gateway is already running when a
-   stack launches (§6).
+   request names it ([§1](#1-model-gateways-and-protocols)), and the
+   gateway is already running when a stack launches ([§6](#6-launch)).
 3. **Secrets.** In the current proposal, `endpoint.json` doesn't
    include secrets, so if the endpoint for an externally-hosted model
    requires secrets, we have no way of letting the agent client
@@ -782,10 +791,10 @@ publish the endpoints its stacks use.
    protocols, launch has to recognise the gateway by its own endpoints
    (llama.cpp's `/props`, Ollama's `/api/ps`, oMLX's
    `/v1/models/status`) or make a test call per protocol. A gateway
-   package's `describe` answers this for a gateway launch knows (§7).
-   For one it does not, such as a remote endpoint with no
-   `protocols`, is that fallback part of this proposal, or left to
-   each launcher?
+   package's `describe` answers this for a gateway launch knows
+   ([§7](#7-gateway-packages)). For one it does not, such as a remote
+   endpoint with no `protocols`, is that fallback part of this proposal,
+   or left to each launcher?
 6. **`model.json`.** A model directory will hold a `model.json` that
    describes the model: its format, its files and their digests, its
    source, its context length. Its schema waits on a spike that feeds
@@ -816,7 +825,7 @@ publish the endpoints its stacks use.
     `model.json`, in the gateway's own per-model configuration (such
     as a llama.cpp preset file), or in both?
 
-## Appendix A: Model gateways that meet §1
+## Appendix A: Model gateways that meet the contract
 
 This appendix is non-normative, and grows with each agent client and
 model gateway tested. Each server below was read from its source at
