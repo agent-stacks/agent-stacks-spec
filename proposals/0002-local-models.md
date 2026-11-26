@@ -336,10 +336,14 @@ a request's `model` names, on every model gateway that serves it
 ([§7](#7-gateway-packages)). So:
 
 1. It SHOULD be unique among the models an environment serves, and
-   SHOULD match `<model-name>`.
+   SHOULD equal `<model-name>`, the model's directory name. A gateway
+   package's `check` and `serve` name a model by its `id`
+   ([§7](#7-gateway-packages)), so when the two differ, the name in
+   their output is not the directory a user looks for.
 2. It MUST NOT contain `/` or `:`. Gateways turn it into a file name
    or a section name, and some give both characters a meaning of
    their own.
+3. A `model.json` with no `id` is named by its directory.
 
 ##### `layout`, `format` and `entry`
 
@@ -567,8 +571,11 @@ and an MLX model on oMLX or mlx-lm.
 2. A builder that cannot resolve the named gateway package SHOULD fail
    the build, naming the stack and the gateway.
 3. A builder SHOULD run the gateway's `check` on every carried model,
-   and fail the build on a model the gateway skips for its format or
-   platform, naming the model, the gateway, and the reason.
+   and fail the build on a model the gateway skips with `format`,
+   `platform`, `layout`, `weights` or `model-json`
+   ([Codes](#codes)), naming the model, the gateway, and the reason.
+   It reads the codes, not `check`'s exit status, which is 0 when
+   models are skipped.
 4. A builder SHOULD put every serving parameter the stack decides (the
    context length, offload, concurrency) in `bin/<stack-name>-gateway`,
    passed through to the server.
@@ -857,7 +864,16 @@ Writes one JSON object, the gateway's profile, and starts nothing:
 - `protocols` — the protocols
   ([§1](#1-model-gateways-and-protocols)) the server speaks. This is
   how launch learns what a gateway it knows speaks.
-- `defaultPort` — where `serve` listens when not told otherwise.
+- `defaultPort` — where `serve` listens when not told otherwise. It is
+  the server's own default, so it differs between gateways:
+  `agent-gateway-llama-cpp` uses llama.cpp's 9931, and
+  `agent-gateway-omlx` oMLX's 8000. Nothing in this proposal assumes
+  one port for every gateway.
+
+A gateway package MAY add fields of its own to the profile, such as
+`agent-gateway-omlx`'s `minimumMacOS`, the oldest macOS its server
+runs on. A consumer MUST ignore fields it does not know, so that a
+field added later does not break an older launcher or builder.
 
 #### `check`
 
@@ -865,12 +881,23 @@ Writes one JSON object, the gateway's profile, and starts nothing:
 agent-gateway-<name> check <model.json>…
 ```
 
-Each argument is a model's `model.json` ([§2](#modeljson)). For each
-model, `check` writes one line, without loading anything:
+Each argument is a model's `model.json` ([§2](#modeljson)), or the
+model's directory. For each model, `check` writes one line, without
+loading anything:
 
-- `<model-name> ok` when this gateway can serve the model on this
-  host.
-- `<model-name> skip <code> <message>` when it cannot.
+- `<id> ok` when this gateway can serve the model on this host.
+- `<id> skip <code> <message>` when it cannot.
+
+`<id>` is the model's `id` ([§2](#id)), the name `serve` lists it by.
+When the `model.json` cannot be read or its `id` is unusable, the line
+names the model's directory instead, with the code `model-json`.
+
+`check` exits 0 once it has written a line for every argument, whether
+those lines say `ok` or `skip`. A skip is an answer, not a failure:
+what it means is the caller's to decide, and a builder fails on some
+codes ([§3](#3-build)) where `serve` only warns. `check` exits
+non-zero only when it cannot check at all, such as when it is called
+with no arguments.
 
 It checks what can be known before a load: that the model has files
 or an endpoint and not both, the model files' format and platform
@@ -949,6 +976,19 @@ object in the same shape for every server:
 This is where the differences in Appendix A's last row end: each
 package knows where its server reports a model's context window.
 
+`contextLength` SHOULD be:
+
+- for a loaded model, the window the server actually runs it with,
+  which a server argument such as llama.cpp's `-c` can make smaller
+  than the model was trained for;
+- for a model not loaded, the context the model was trained for, or
+  the window the server will enforce when it loads the model, when the
+  server already knows it;
+- `null` when the server reports neither.
+
+So the value can change when a model loads, and a caller that needs
+the window a request will get asks again after loading it.
+
 #### Codes
 
 `check` and `serve` share one set of codes:
@@ -956,13 +996,22 @@ package knows where its server reports a model's context window.
 | Code | Meaning |
 | --- | --- |
 | `address` | the address cannot be listened on |
+| `model-json` | the `model.json` is missing, cannot be read, or breaks [§2](#modeljson): an unusable `id`, or both files and an endpoint |
 | `format` | the server does not load the model files' format |
 | `platform` | the server does not run on this platform |
-| `weights` | the model files are missing or will not load |
+| `layout` | the gateway cannot hand files in the model's `layout` to its server |
+| `weights` | the model files are missing, do not match `files[]`, or are not what `entry` and `format` say |
 | `memory` | the host does not have enough memory |
 | `host` | the host doesn't meet some other requirement: an accelerator, a driver, an operating system version |
 | `endpoint` | the model has an endpoint, and is not served locally |
-| `other` | catch-all for other errors |
+| `other` | catch-all for errors no other code names |
+
+`layout` is about the gateway, not the model: the same files may be
+served by a gateway that takes that layout, and a gateway that learns
+it needs no new model. `weights` is about the files themselves. A
+gateway SHOULD use the most specific code that applies and keep
+`other` for what none of them names, so that a builder can act on the
+code alone ([§3](#3-build)).
 
 #### A gateway the user already runs
 
