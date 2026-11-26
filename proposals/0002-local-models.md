@@ -352,6 +352,11 @@ in the following format:
 `endpoint.json` SHOULD NOT hold a credential. Secrets are not yet part
 of the spec; this remains an open question (3).
 
+NOTE: `endpoint.json` is expected to be folded into the `model.json`
+every model directory will hold, as its `endpoint` object with these
+three fields unchanged. Until that file is specified, this proposal
+keeps `endpoint.json` (open question 6).
+
 ### 3. Build
 
 A self-contained model's files are a source (§10.1) that should be
@@ -456,11 +461,11 @@ resolving the agent and executing it):
    loopback address and a free port, run `serve` with those arguments
    and a protocol the agent client speaks, and wait for the server to
    be ready. If the stack is already running via another launch, join
-   the servers that are already running. For each externally-hosted
-   model, confirm that the endpoint is accepting requests, lists the
-   model, and speaks a protocol the agent client speaks (§1). If any
-   of these steps fails, the stack SHOULD refuse to launch and show
-   the error to the user.
+   the servers that are already running. For an endpoint found as
+   described in [Finding the endpoint](#finding-the-endpoint), confirm
+   that it is accepting requests, lists the model, and speaks a
+   protocol the agent client speaks (§1). If any of these steps fails,
+   the stack SHOULD refuse to launch and show the error to the user.
 2. **Give the models to the agent client**, using the agent client's
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
@@ -475,6 +480,44 @@ resolving the agent and executing it):
 
    The wrapper starts or joins the servers, runs the agent client, and
    stops the servers once the last launch exits.
+
+#### Finding the endpoint
+
+A model the stack does not serve itself is reached at an endpoint.
+Launch looks for one in this order, and the first source that names an
+endpoint wins; a later source is not merged into it:
+
+1. **Flags.** `--model-url <url>` names the endpoint,
+   `--model-api <protocol>` the protocol to use, and `--model <id>`
+   the model to start with. For one-off runs and scripts.
+2. **Environment.** An environment that runs a model gateway as a
+   service sets these beside it, which makes this the main path:
+   - `AGENT_STACKS_MODEL_URL` — the endpoint.
+   - `AGENT_STACKS_MODEL_PROTOCOLS` — the protocols it speaks, as a
+     comma-separated list, like `protocols` in `endpoint.json`.
+   - `AGENT_STACKS_MODEL` — the model to start with.
+   - `AGENT_STACKS_MODELS_DIR` — the directory the gateway serves
+     model files from, so launch can list models without asking it.
+3. **The stack.** The `endpoint.json` of each externally-hosted model
+   under `share/agent-models/`.
+4. **Asking.** With none of the above, launch sends `GET /v1/models`
+   to loopback at the default ports of known model gateways (9931,
+   8000, 11434, and LM Studio's 1234) and uses the first that answers.
+
+Every source can name several models, which a single model variable
+could not. Every model the endpoint lists is offered to the agent
+client; `--model` and `AGENT_STACKS_MODEL` only choose the one to
+start with. With several models and none chosen, the agent client's
+own model picker decides.
+
+`--model-api` is singular on purpose. It means "use this one", where
+the lists in the environment and in `endpoint.json` say what the
+endpoint can do and leave the choice to the matching in §1.
+
+When a source names an endpoint but not its protocols, and always when
+launch found it by asking, launch does not know what the endpoint
+speaks: no model gateway reports it, and `GET /v1/models` lists models,
+not APIs. See open question 5.
 
 ### 7. Bindings
 
@@ -523,6 +566,20 @@ publish the endpoints its stacks use.
    leaking secrets?
 4. **Single base URL.** Some agent clients, such as Claude Code, take a
    single base URL. How do they reach models at different URLs?
+5. **Which protocols does an endpoint speak?** No model gateway reports
+   it. When launch finds an endpoint by asking, or a source gives no
+   protocols, launch has to recognise the gateway by its own endpoints
+   (llama.cpp's `/props`, Ollama's `/api/ps`, oMLX's
+   `/v1/models/status`) or make a test call per protocol. Is that
+   fallback part of this proposal, or left to each launcher?
+6. **`model.json`.** A model directory will hold a `model.json` that
+   describes the model: its format, its files and their digests, its
+   source, its context length. Its schema waits on a spike that feeds
+   each inference server from it with links alone. `endpoint.json` is
+   expected to become its `endpoint` object, fields unchanged, so that
+   a model has either model files or an endpoint and never both. Does
+   that fold work for externally-hosted models as written here, and
+   what else does a remote model's `model.json` need to say?
 
 ## Appendix A: Model gateways that meet §1
 
