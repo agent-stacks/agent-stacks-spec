@@ -238,6 +238,12 @@ itself.
 What each agent client speaks is a fact about the agent client, and
 lives in the launcher beside the rest of its per-agent code.
 
+Some agent clients are desktop apps, and a launcher cannot always point
+one at a model gateway. A launcher that cannot MUST refuse the model
+flags (`--model-url`, `--model-api`, `--default-model`) for that agent
+client with an error, rather than ignore them and run the app against
+whatever model it uses on its own.
+
 ### 2. Layout
 
 1. A stack MAY store models at
@@ -715,8 +721,9 @@ The stack's own gateway SHOULD have the following properties:
    stack, concurrent or not. Sharing saves memory and keeps caches
    warm, and a launch that exits leaves the gateway running.
 4. **It listens where the launcher looks.** It takes `--listen <addr>`
-   and otherwise listens on a loopback address the stack's launcher
-   also knows. An inference server it starts behind it SHOULD use a
+   and otherwise listens on loopback at its gateway package's
+   `defaultPort` ([§7](#describe)), where the stack's launcher looks.
+   An inference server it starts behind it SHOULD use a
    dynamically-assigned port, to avoid port conflicts.
 5. **Server state is per-stack.** Some servers default to writing
    models, cache, and configuration to a user's home directory; this
@@ -784,15 +791,21 @@ endpoint wins; a later source is not merged into it:
      model files from, colon-separated, so launch can list models
      without asking it. A gateway package's `serve` reads the same
      variable ([§7](#serve)).
-3. **The stack.** The `endpoint` in the `model.json` of each
-   externally-hosted model under `share/agent-models/`. A launcher
-   whose stack ships `bin/<stack-name>-gateway` sets
-   `AGENT_STACKS_MODEL_URL` and `AGENT_STACKS_MODEL_PROTOCOLS` for its
-   own gateway when they are not already set, so that gateway is found
-   in step 2.
-4. **Asking.** With none of the above, launch sends `GET /v1/models`
-   to loopback at the default ports of known model gateways (9931,
-   8000, 11434, and LM Studio's 1234) and uses the first that answers.
+3. **The stack's models.** The `endpoint` in the `model.json` of each
+   externally-hosted model under `share/agent-models/`.
+4. **The stack's gateway package.** When the stack names a gateway
+   package ([§7](#7-gateway-packages)), launch runs its `describe` and
+   uses loopback at its `defaultPort`, with the `protocols` it reports.
+
+When none of these names an endpoint, launch stops and says how to
+name one: `--model-url`, `AGENT_STACKS_MODEL_URL`, or, for a stack
+that ships a gateway, the command that starts it.
+
+Launch never scans local ports for a model gateway. A server that
+answers on a well-known port may be the wrong one: another stack's
+gateway, another version, an app the user forgot was running. The
+gateway the stack ships, or the URL the user names, is the source of
+truth.
 
 Every source can name several models, which a single model variable
 could not. Every model the endpoint lists is offered to the agent
@@ -807,9 +820,20 @@ endpoint can do and leave the choice to the matching in
 
 When a source names an endpoint but not its protocols, launch asks the
 gateway package's `describe` when it knows the package
-([§7](#7-gateway-packages)). Otherwise, and always when launch found the
-endpoint by asking, launch does not know what the endpoint speaks: no
-model gateway reports it, and `GET /v1/models` lists models, not APIs.
+([§7](#7-gateway-packages)). Otherwise launch does not know what the
+endpoint speaks: no model gateway reports it, and `GET /v1/models`
+lists models, not APIs. When nothing declares the protocols (no
+`--model-api`, no `AGENT_STACKS_MODEL_PROTOCOLS`, no
+`endpoint.protocols`, no `describe`):
+
+1. For a loopback endpoint, launch MAY send a test request to each
+   protocol's path ([§1](#protocol-names)) and use the protocols that
+   answer.
+2. For any other host, launch MUST NOT send test requests. It MUST stop
+   and ask for the protocol, naming `--model-api` and
+   `AGENT_STACKS_MODEL_PROTOCOLS`. A test request to a remote endpoint
+   can be logged as an error or billed.
+
 See open question 5.
 
 ### 7. Gateway packages
@@ -1109,15 +1133,16 @@ publish the endpoints its stacks use.
    leaking secrets?
 4. **Single base URL.** Some agent clients, such as Claude Code, take a
    single base URL. How do they reach models at different URLs?
-5. **Which protocols does an endpoint speak?** No model gateway reports
-   it. When launch finds an endpoint by asking, or a source gives no
-   protocols, launch has to recognise the gateway by its own endpoints
-   (llama.cpp's `/props`, Ollama's `/api/ps`, oMLX's
-   `/v1/models/status`) or make a test call per protocol. A gateway
-   package's `describe` answers this for a gateway launch knows
-   ([§7](#7-gateway-packages)). For one it does not, such as a remote
-   endpoint with no `protocols`, is that fallback part of this proposal,
-   or left to each launcher?
+5. **Which protocols does an endpoint speak?** Resolved in part: a
+   gateway package's `describe` answers it for a gateway launch knows
+   ([§7](#7-gateway-packages)), launch never scans ports for an
+   endpoint, and when nothing declares the protocols launch MAY send
+   test requests only to a loopback endpoint, and stops and asks for
+   any other ([Finding the endpoint](#finding-the-endpoint)). What
+   stays open is what a test request looks like: one that loads no
+   model and generates nothing, and still tells a path the gateway
+   speaks from one it does not, given that gateways answer a malformed
+   request differently.
 6. **`model.json` and the efforts it borrows from.** Resolved in
    part: [§2](#modeljson) specifies `model.json`,
    `agent-gateway-llama-cpp` and `agent-gateway-omlx` feed their
