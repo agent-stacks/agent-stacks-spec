@@ -29,11 +29,13 @@ Defining a model in a stack has four unique considerations:
 3. **Declaration.** The vocabulary in §6.1 defines `models`, either
    carried, borrowed, or externally-hosted, and `modelRoles`, the
    model the agent client uses for each of its roles.
-4. **Launch.** The stack owns the lifecycle of every inference server
-   it starts. When you launch a stack, each inference server starts on
-   a loopback port, which gives the agent client access to the models.
-   These servers stop after the last agent client has exited. The
-   launch will fail if a declared model can't be served.
+4. **Launch.** A model gateway serves the models, and the launcher
+   never starts one. A stack that carries models ships
+   `bin/<stack>-gateway` to serve them, which the user or a service
+   manager runs beside the launcher. When you launch a stack, the
+   launcher finds the endpoint and gives the agent client access to
+   the models; when the gateway is not up, it says so and names the
+   command. The launch will fail if a declared model can't be served.
 
 Underneath all four, a model is reached through a model gateway that
 speaks one of a few named protocols.
@@ -69,11 +71,11 @@ network access at all (e.g. in air-gapped environments).
    about where that model is hosted. This allows a third party to
    understand how the models in a stack are configured prior to
    launching the stack.
-2. **The stack manages the lifecycle of inference servers.** If a model
-   is hosted by the stack itself, there should be no external
-   dependencies outside of the stack at runtime, other than hardware
-   and drivers. The inference servers are started by the stack, and
-   stopped by the stack.
+2. **The stack carries what serves its models.** If a model is hosted
+   by the stack itself, there should be no external dependencies
+   outside of the stack at runtime, other than hardware and drivers.
+   The stack carries its model gateway and the command that runs it;
+   the user or a service manager decides when it runs.
 3. **Declared models must be available.** If a model can't be served
    (in the self-contained case) or accessed (in the externally-hosted
    case), the stack will fail to launch.
@@ -243,11 +245,15 @@ lives in the launcher beside the rest of its per-agent code.
 4. The model files and the server SHOULD be links into the stack's
    dependency set, similar to how plugin runtimes work (§8.3).
 5. `<model-name>` is how the stack refers to the model.
+6. A stack that carries a model SHOULD also provide
+   `<stack root>/bin/<stack-name>-gateway`, the stack's own model
+   gateway ([§6](#6-launch)).
 
 ```text
 caveman-stack/
 ├── bin/
-│   └── caveman-stack
+│   ├── caveman-stack
+│   └── caveman-stack-gateway          serves the carried models
 └── share/
     ├── agent-plugins/
     │   └── caveman/...
@@ -474,12 +480,16 @@ set them stay with the launch (§7), as §6.4 intends.
 
 A model can be served in one of the following ways:
 
-| Where the model is served | Managed by | Type |
-|---|---|---|
-| Local host | Agent stack ([Launch](#6-launch)) | Self-contained |
-| On the host | You | Externally-hosted, with a loopback `url` |
+| Where the model is served | Gateway run by | Type |
+| --- | --- | --- |
+| On the host, by the stack's own gateway | You or a service manager, with `bin/<stack>-gateway` ([Launch](#6-launch)) | Carried |
+| On the host, by a gateway you already run | You (an app, a service in your environment) | Borrowed, or externally-hosted with a loopback `url` |
 | On another machine | Someone else | Externally-hosted |
 | On a third-party platform | Vendor | Externally-hosted |
+
+In every pattern the launcher connects to a model gateway that is
+already running. It never starts one, so the gateway's lifetime is not
+tied to any one launch of the agent client.
 
 One stack can contain multiple models with different deployment
 patterns. For example, a stack can contain a self-contained model and
@@ -487,58 +497,58 @@ reference an externally-hosted model from a team server.
 
 ### 6. Launch
 
-The stack owns the lifecycle of every server it starts. A launcher that
-serves models SHOULD have the following properties:
+A stack that carries models has two executables, one for each side:
 
-1. **No manual setup.** Externally-hosted models require an existing
-   inference server, but otherwise there should be no dependencies on
-   the underlying host system beyond hardware and drivers.
-2. **No manual cleanup.** When a stack is torn down or killed, all of
-   its processes (including inference servers) are torn down too.
-3. **Multiple launches of a stack can share servers.** The first launch
-   starts the servers, and concurrent launches of the same stack share
-   those servers. Sharing saves memory and keeps caches warm. Once all
-   launches of a stack exit, the servers are torn down.
-4. **Each model has its own server.** If a stack has multiple
-   self-contained models, the stack SHOULD start a separate server for
-   each one at launch.
-5. **Each server should use a dynamically-assigned port.** To avoid
-   port conflicts, servers should not use fixed ports.
-6. **Server state is per-stack.** Some servers default to writing
+- `bin/<stack-name>-gateway` serves the carried models at one endpoint
+  and stays in the foreground until it receives `SIGTERM`. The user
+  runs it, or a service manager does: a service in the consumer's
+  environment, launchd, systemd.
+- `bin/<stack-name>`, the launcher, runs the agent client against that
+  endpoint.
+
+The launcher never starts a model gateway, the stack's own or any
+other. It connects to one that is running, or says that none is.
+
+The stack's own gateway SHOULD have the following properties:
+
+1. **No manual setup.** There should be no dependencies on the
+   underlying host system beyond hardware and drivers.
+2. **No manual cleanup.** When the gateway is stopped or killed, every
+   process it started, including inference servers, stops too.
+3. **Every launch shares it.** One gateway serves every launch of the
+   stack, concurrent or not. Sharing saves memory and keeps caches
+   warm, and a launch that exits leaves the gateway running.
+4. **It listens where the launcher looks.** It takes `--listen <addr>`
+   and otherwise listens on a loopback address the stack's launcher
+   also knows. An inference server it starts behind it SHOULD use a
+   dynamically-assigned port, to avoid port conflicts.
+5. **Server state is per-stack.** Some servers default to writing
    models, cache, and configuration to a user's home directory; this
    data SHOULD instead be written to a per-stack state directory. This
-   state SHOULD NOT persist between launches.
+   state SHOULD NOT persist between runs of the gateway.
 
 When a stack has a model, the following launch process should be
 followed (this alters the process defined in §7, between the steps of
 resolving the agent and executing it):
 
-1. **Start or join the servers.** For each self-contained model with no
-   server running for this stack, run `check` if it exists, choose a
-   loopback address and a free port, run `serve` with those arguments
-   and a protocol the agent client speaks, and wait for the server to
-   be ready. If the stack is already running via another launch, join
-   the servers that are already running. For an endpoint found as
-   described in [Finding the endpoint](#finding-the-endpoint), confirm
-   that it is accepting requests, lists the model, and speaks a
-   protocol the agent client speaks (§1). If any of these steps fails,
-   the stack SHOULD refuse to launch and show the error to the user.
+1. **Find and check the endpoint**, as described in
+   [Finding the endpoint](#finding-the-endpoint), and confirm that it
+   is accepting requests, lists the models, and speaks a protocol the
+   agent client speaks (§1). When nothing answers, the launcher SHOULD
+   refuse to launch, say that the model gateway is not up, and name
+   the command that starts it, e.g. "the model gateway isn't up yet:
+   run caveman-stack-gateway". If any other step fails, the stack
+   SHOULD refuse to launch and show the error to the user.
 2. **Give the models to the agent client**, using the agent client's
    configuration (an environment variable, a generated file in the
    per-launch staging directory) to set the model. When there are
    multiple models in a stack, the `default` role is the one to start
    with, and every other role is set as [Model roles](#model-roles)
    says.
-3. **Manage server lifetimes** as defined above, even if the agent
-   client crashes. This requires a wrapper or service manager, which
-   amends §7. For example:
 
-   ```sh
-   <serve wrapper> -- <agent client> [args]
-   ```
-
-   The wrapper starts or joins the servers, runs the agent client, and
-   stops the servers once the last launch exits.
+Because the gateway outlives any one launch, the launcher needs no
+wrapper or watcher: §7's launcher still hands over to the agent client
+and gets out of the way.
 
 #### Finding the endpoint
 
@@ -558,7 +568,10 @@ endpoint wins; a later source is not merged into it:
    - `AGENT_STACKS_MODELS_DIR` — the directory the gateway serves
      model files from, so launch can list models without asking it.
 3. **The stack.** The `endpoint.json` of each externally-hosted model
-   under `share/agent-models/`.
+   under `share/agent-models/`. A launcher whose stack ships
+   `bin/<stack-name>-gateway` sets `AGENT_STACKS_MODEL_URL` and
+   `AGENT_STACKS_MODEL_PROTOCOLS` for its own gateway when they are not
+   already set, so that gateway is found in step 2.
 4. **Asking.** With none of the above, launch sends `GET /v1/models`
    to loopback at the default ports of known model gateways (9931,
    8000, 11434, and LM Studio's 1234) and uses the first that answers.
@@ -628,9 +641,9 @@ publish the endpoints its stacks use.
    length is so it knows how to avoid context overflows? Every model
    gateway reports a model's context window somewhere else (Appendix
    A), so it is not part of the contract in §1.
-2. **Lazy loading.** To make it faster to launch a stack, should we
-   consider only starting a server when an agent client makes a
-   request to it?
+2. **Lazy loading.** Resolved: a model gateway loads a model when a
+   request names it (§1), and the gateway is already running when a
+   stack launches (§6).
 3. **Secrets.** In the current proposal, `endpoint.json` doesn't
    include secrets, so if the endpoint for an externally-hosted model
    requires secrets, we have no way of letting the agent client
@@ -657,6 +670,13 @@ publish the endpoints its stacks use.
    gateways derive that ID differently. Is the repository enough for a
    launcher to find the model and announce it, or does the declaration
    also need the ID?
+8. **Should a launcher ever start the gateway?** This proposal says
+   never: the user or a service manager runs `bin/<stack>-gateway`,
+   and the launcher connects or names the command. An earlier draft
+   had the launcher start, share, and stop the servers itself, which
+   is more convenient for one person on one machine but needs a
+   watcher that outlives the agent client, amending §7. Is that worth
+   keeping as an option?
 
 ## Appendix A: Model gateways that meet §1
 
